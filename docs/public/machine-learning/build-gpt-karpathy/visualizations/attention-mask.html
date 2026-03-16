@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: #1e1e2e; color: #cdd6f4; padding: 20px; min-height: 100%; }
+  h3 { font-size: 13px; color: #89b4fa; margin-bottom: 8px; font-weight: 600; letter-spacing: .5px; }
+  .container { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .panel { flex: 1; min-width: 220px; }
+  .matrix-wrap { position: relative; }
+  .matrix { display: grid; gap: 3px; width: fit-content; }
+  .cell {
+    width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; font-size: 11px; font-weight: 700; transition: all .35s ease;
+    cursor: default; position: relative;
+  }
+  .label-row { display: flex; gap: 3px; margin-bottom: 3px; padding-left: 41px; }
+  .label-col { display: flex; flex-direction: column; gap: 3px; margin-right: 3px; }
+  .axis-label {
+    width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #6c7086; font-style: italic;
+  }
+  .step-btn {
+    background: #313244; border: 1px solid #45475a; color: #cdd6f4;
+    padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 13px;
+    transition: background .2s; margin-right: 8px;
+  }
+  .step-btn:hover { background: #89b4fa; color: #1e1e2e; }
+  .step-btn:disabled { opacity: .4; cursor: default; }
+  .controls { margin-top: 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .step-info { background: #181825; border-left: 3px solid #89b4fa; padding: 10px 14px; border-radius: 0 8px 8px 0; flex: 1; min-width: 180px; }
+  .step-title { font-size: 12px; color: #89b4fa; font-weight: 700; margin-bottom: 4px; }
+  .step-desc { font-size: 11px; color: #a6adc8; line-height: 1.5; }
+  code { background: #313244; padding: 1px 5px; border-radius: 4px; font-size: 10px; color: #f38ba8; }
+  .legend { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #a6adc8; }
+  .legend-swatch { width: 16px; height: 16px; border-radius: 4px; }
+  .progress { display: flex; gap: 6px; margin-bottom: 14px; }
+  .prog-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #45475a; transition: background .3s;
+  }
+  .prog-dot.active { background: #89b4fa; }
+  .prog-dot.done { background: #a6e3a1; }
+</style>
+</head>
+<body>
+<div style="margin-bottom:14px;">
+  <div style="font-size:14px;font-weight:700;color:#cdd6f4;margin-bottom:4px;">因果 Attention 掩码 — 步骤可视化</div>
+  <div style="font-size:11px;color:#6c7086;">T=6 个 token，展示 torch.tril → masked_fill → softmax 的完整流程</div>
+</div>
+
+<div class="progress" id="progress"></div>
+
+<div class="container">
+  <div class="panel">
+    <h3 id="matrix-title">Attention Scores (Q·Kᵀ / √d)</h3>
+    <div class="matrix-wrap">
+      <div class="label-row" id="col-labels"></div>
+      <div style="display:flex;">
+        <div class="label-col" id="row-labels"></div>
+        <div class="matrix" id="matrix" style="grid-template-columns: repeat(6, 38px);"></div>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button class="step-btn" id="btn-prev" onclick="changeStep(-1)">← 上一步</button>
+  <button class="step-btn" id="btn-next" onclick="changeStep(1)">下一步 →</button>
+  <div class="step-info">
+    <div class="step-title" id="info-title"></div>
+    <div class="step-desc" id="info-desc"></div>
+  </div>
+</div>
+
+<script>
+const T = 6;
+const tokens = ['H','e','l','l','o','!'];
+
+// Random-looking but deterministic scores
+const rawScores = [
+  [0.8, 0.3,-0.5, 0.1,-0.2, 0.6],
+  [0.2, 1.1, 0.4,-0.3, 0.7,-0.1],
+  [-0.4, 0.6, 0.9, 0.2,-0.5, 0.3],
+  [0.5,-0.2, 0.3, 1.2, 0.1,-0.4],
+  [-0.1, 0.8,-0.3, 0.4, 0.7, 0.2],
+  [0.3,-0.5, 0.6,-0.1, 0.2, 1.0]
+];
+
+function softmax(arr) {
+  const max = Math.max(...arr.filter(v => isFinite(v)));
+  const exps = arr.map(v => isFinite(v) ? Math.exp(v - max) : 0);
+  const sum = exps.reduce((a,b) => a+b, 0);
+  return exps.map(v => v/sum);
+}
+
+const steps = [
+  {
+    title: 'Step 0：原始 Attention Scores',
+    desc: '计算 Q·Kᵀ / √d_k 后得到的原始分数（未归一化）。每个值表示两个 token 之间的"亲和力"。',
+    code: 'wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5',
+    compute: (r,c) => rawScores[r][c],
+    color: (v) => {
+      const t = (v+1.5)/3;
+      return `rgba(137,180,250,${Math.max(0.05, Math.min(1, t))})`;
+    },
+    fmt: (v) => v.toFixed(2),
+    legend: [
+      {color:'rgba(137,180,250,0.9)',label:'高分（强关联）'},
+      {color:'rgba(137,180,250,0.1)',label:'低分（弱关联）'}
+    ]
+  },
+  {
+    title: 'Step 1：torch.tril — 因果掩码',
+    desc: '下三角矩阵确保每个位置只能看到自己和之前的 token（不能"偷看"未来）。0 表示需要被遮蔽的位置。',
+    code: 'tril = torch.tril(torch.ones(T, T))',
+    compute: (r,c) => c <= r ? 1 : 0,
+    color: (v) => v === 1 ? 'rgba(166,227,161,0.7)' : 'rgba(243,139,168,0.2)',
+    fmt: (v) => v === 1 ? '1' : '0',
+    legend: [
+      {color:'rgba(166,227,161,0.7)',label:'1：可以访问'},
+      {color:'rgba(243,139,168,0.3)',label:'0：被遮蔽（未来）'}
+    ]
+  },
+  {
+    title: 'Step 2：masked_fill — 填充 -∞',
+    desc: '将掩码为 0 的位置（未来 token）填为 -∞。softmax 处理 -∞ 后会得到精确的 0 概率。',
+    code: 'wei = wei.masked_fill(tril[:T,:T]==0, float(\'-inf\'))',
+    compute: (r,c) => c <= r ? rawScores[r][c] : -Infinity,
+    color: (v) => {
+      if (!isFinite(v)) return 'rgba(243,139,168,0.35)';
+      const t = (v+1.5)/3;
+      return `rgba(137,180,250,${Math.max(0.1, Math.min(1, t))})`;
+    },
+    fmt: (v) => isFinite(v) ? v.toFixed(1) : '-∞',
+    legend: [
+      {color:'rgba(243,139,168,0.4)',label:'-∞（未来，遮蔽）'},
+      {color:'rgba(137,180,250,0.8)',label:'保留的分数'}
+    ]
+  },
+  {
+    title: 'Step 3：F.softmax — 转为概率',
+    desc: 'Softmax 将每一行转换为概率分布（行内求和为 1）。-∞ 精确变为 0，保留的分数变为正的注意力权重。',
+    code: 'wei = F.softmax(wei, dim=-1)',
+    compute: (r,c) => {
+      const row = rawScores[r].map((v, ci) => ci <= r ? v : -Infinity);
+      return softmax(row)[c];
+    },
+    color: (v) => {
+      if (v < 0.001) return 'rgba(243,139,168,0.15)';
+      return `rgba(250,179,135,${Math.max(0.1, Math.min(1, v*3))})`;
+    },
+    fmt: (v) => v < 0.001 ? '0' : v.toFixed(2),
+    legend: [
+      {color:'rgba(250,179,135,0.9)',label:'高注意力权重'},
+      {color:'rgba(250,179,135,0.1)',label:'低权重'},
+      {color:'rgba(243,139,168,0.2)',label:'0（遮蔽位置）'}
+    ]
+  }
+];
+
+let currentStep = 0;
+
+function render() {
+  const step = steps[currentStep];
+  const matrix = document.getElementById('matrix');
+  const prog = document.getElementById('progress');
+
+  // Progress dots
+  prog.innerHTML = steps.map((s,i) =>
+    `<div class="prog-dot ${i < currentStep ? 'done' : i === currentStep ? 'active' : ''}"></div>`
+  ).join('');
+
+  document.getElementById('matrix-title').textContent = step.title;
+  document.getElementById('info-title').textContent = step.title;
+  document.getElementById('info-desc').innerHTML =
+    step.desc + (step.code ? `<br><br><code>${step.code}</code>` : '');
+
+  // Axis labels
+  const colLabels = document.getElementById('col-labels');
+  const rowLabels = document.getElementById('row-labels');
+  colLabels.innerHTML = tokens.map(t => `<div class="axis-label">${t}</div>`).join('');
+  rowLabels.innerHTML = tokens.map(t => `<div class="axis-label">${t}</div>`).join('');
+
+  // Cells
+  matrix.innerHTML = '';
+  for (let r = 0; r < T; r++) {
+    for (let c = 0; c < T; c++) {
+      const v = step.compute(r, c);
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.style.background = step.color(v);
+      cell.style.color = '#cdd6f4';
+      cell.textContent = step.fmt(v);
+      cell.title = `${tokens[r]} → ${tokens[c]}: ${step.fmt(v)}`;
+      matrix.appendChild(cell);
+    }
+  }
+
+  // Legend
+  const legend = document.getElementById('legend');
+  legend.innerHTML = step.legend.map(l =>
+    `<div class="legend-item"><div class="legend-swatch" style="background:${l.color}"></div>${l.label}</div>`
+  ).join('');
+
+  document.getElementById('btn-prev').disabled = currentStep === 0;
+  document.getElementById('btn-next').disabled = currentStep === steps.length - 1;
+  document.getElementById('btn-next').textContent =
+    currentStep === steps.length - 1 ? '✓ 完成' : '下一步 →';
+}
+
+function changeStep(delta) {
+  const next = currentStep + delta;
+  if (next >= 0 && next < steps.length) {
+    currentStep = next;
+    render();
+  }
+}
+
+render();
+</script>
+</body>
+</html>

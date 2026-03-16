@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: #1e1e2e; color: #cdd6f4; padding: 20px; }
+  .title { font-size: 14px; font-weight: 700; color: #cdd6f4; margin-bottom: 4px; }
+  .subtitle { font-size: 11px; color: #6c7086; margin-bottom: 18px; }
+  .layout { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+  .col-title { font-size: 11px; font-weight: 700; color: #89b4fa; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 4px; }
+
+  /* Vocab */
+  .vocab-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    background: #313244; border-radius: 8px; cursor: pointer;
+    border: 2px solid transparent; transition: all .2s; width: 120px;
+  }
+  .vocab-item:hover { border-color: #585b70; }
+  .vocab-item.selected { border-color: #89b4fa; background: #1e1e3e; }
+  .vocab-char { font-size: 18px; font-weight: 700; width: 22px; text-align: center; }
+  .vocab-idx { font-size: 10px; color: #6c7086; }
+
+  /* Arrow area */
+  .arrow-col { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; padding-top: 28px; }
+  .arrow { font-size: 22px; color: #89b4fa; opacity: 0; transition: opacity .4s; }
+  .arrow.visible { opacity: 1; }
+  .arrow-label { font-size: 10px; color: #89b4fa; text-align: center; opacity: 0; transition: opacity .4s; line-height: 1.4; }
+  .arrow-label.visible { opacity: 1; }
+
+  /* Embedding matrix */
+  .embed-matrix { display: flex; flex-direction: column; gap: 3px; }
+  .embed-row {
+    display: flex; gap: 3px; align-items: center;
+    transition: all .3s;
+  }
+  .embed-row-label { font-size: 10px; color: #6c7086; width: 18px; text-align: right; margin-right: 4px; }
+  .embed-cell {
+    width: 28px; height: 28px; border-radius: 5px; display: flex; align-items: center;
+    justify-content: center; font-size: 9px; font-weight: 700;
+    background: #313244; color: #585b70; transition: all .35s;
+  }
+  .embed-row.highlighted .embed-cell {
+    background: #1e1e3e; color: #89b4fa; border: 1.5px solid #89b4fa;
+  }
+  .embed-row.highlighted .embed-row-label { color: #89b4fa; }
+
+  /* Output vector */
+  .output-col { padding-top: 28px; }
+  .output-vec { display: flex; flex-direction: column; gap: 3px; opacity: 0; transition: opacity .4s; }
+  .output-vec.visible { opacity: 1; }
+  .output-cell {
+    width: 52px; height: 28px; border-radius: 5px; display: flex; align-items: center;
+    justify-content: center; font-size: 9px; font-weight: 700;
+    background: rgba(166,227,161,0.2); color: #a6e3a1;
+    border: 1.5px solid rgba(166,227,161,0.5);
+    transition: all .35s;
+  }
+
+  /* Code display */
+  .code-box {
+    margin-top: 18px; background: #181825; border: 1px solid #313244;
+    border-radius: 10px; padding: 12px 16px; font-size: 11px;
+    color: #a6adc8; line-height: 1.7;
+  }
+  .code-box .kw { color: #cba6f7; }
+  .code-box .fn { color: #89b4fa; }
+  .code-box .num { color: #fab387; }
+  .code-box .hl { background: rgba(137,180,250,0.15); border-radius: 3px; padding: 0 3px; }
+
+  .dim-label {
+    font-size: 10px; color: #6c7086; text-align: center; margin-bottom: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="title">nn.Embedding — 查找表可视化</div>
+<div class="subtitle">点击左侧字符，观察 embedding 矩阵如何查找对应行向量</div>
+
+<div class="layout">
+  <!-- Vocabulary -->
+  <div class="col">
+    <div class="col-title">词表（vocab）</div>
+    <div id="vocab-list"></div>
+  </div>
+
+  <!-- Arrow -->
+  <div class="arrow-col">
+    <div class="arrow-label visible" style="opacity:0.4;font-size:9px;margin-bottom:4px;">索引</div>
+    <div class="arrow" id="arrow">→</div>
+    <div class="arrow-label" id="arrow-label">row <span id="arrow-idx">?</span></div>
+  </div>
+
+  <!-- Embedding Matrix -->
+  <div class="col">
+    <div class="col-title">Embedding 矩阵 <span style="color:#6c7086;font-weight:400;">(vocab_size × n_embd)</span></div>
+    <div class="dim-label" id="dim-label"></div>
+    <div class="embed-matrix" id="embed-matrix"></div>
+  </div>
+
+  <!-- Arrow to output -->
+  <div class="arrow-col">
+    <div class="arrow" id="arrow2" style="opacity:0;">→</div>
+  </div>
+
+  <!-- Output vector -->
+  <div class="output-col">
+    <div class="col-title">输出向量 <span style="color:#6c7086;font-weight:400;">(n_embd,)</span></div>
+    <div class="output-vec" id="output-vec"></div>
+  </div>
+</div>
+
+<div class="code-box" id="code-box">
+  <span class="kw">embedding</span> = <span class="fn">nn.Embedding</span>(<span class="num">vocab_size</span>, <span class="num">n_embd</span>)<br>
+  <span style="color:#6c7086"># 点击上方字符查看查找过程</span>
+</div>
+
+<script>
+const VOCAB = [
+  {char: 'H', val: 'Hello'},
+  {char: 'e', val: 'emoji'},
+  {char: 'l', val: 'llama'},
+  {char: 'l', val: 'llama'},
+  {char: 'o', val: 'ocean'},
+  {char: '!', val: 'excl'},
+  {char: ' ', val: 'space'},
+  {char: 'W', val: 'world'},
+];
+const VOCAB_SIZE = VOCAB.length;
+const N_EMBD = 6; // small for display
+
+// Deterministic pseudo-random values
+function seed(i, j) {
+  const x = Math.sin(i * 37.3 + j * 13.7) * 10000;
+  return (x - Math.floor(x)) * 2 - 1;
+}
+
+const embedMatrix = Array.from({length: VOCAB_SIZE}, (_, i) =>
+  Array.from({length: N_EMBD}, (_, j) => seed(i, j).toFixed(2))
+);
+
+let selected = null;
+
+function buildVocab() {
+  const list = document.getElementById('vocab-list');
+  VOCAB.forEach((v, i) => {
+    const item = document.createElement('div');
+    item.className = 'vocab-item';
+    item.id = `vocab-${i}`;
+    item.innerHTML = `<span class="vocab-char">'${v.char}'</span><span class="vocab-idx">idx=${i}</span>`;
+    item.onclick = () => selectToken(i);
+    list.appendChild(item);
+  });
+}
+
+function buildMatrix() {
+  const mat = document.getElementById('embed-matrix');
+  const dimLabel = document.getElementById('dim-label');
+  dimLabel.textContent = `${VOCAB_SIZE} × ${N_EMBD}`;
+  embedMatrix.forEach((row, i) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'embed-row';
+    rowEl.id = `row-${i}`;
+    const lbl = document.createElement('div');
+    lbl.className = 'embed-row-label';
+    lbl.textContent = i;
+    rowEl.appendChild(lbl);
+    row.forEach(v => {
+      const cell = document.createElement('div');
+      cell.className = 'embed-cell';
+      const val = parseFloat(v);
+      const intensity = Math.abs(val);
+      cell.style.background = val > 0
+        ? `rgba(137,180,250,${0.1 + intensity * 0.3})`
+        : `rgba(243,139,168,${0.1 + intensity * 0.3})`;
+      cell.style.color = '#a6adc8';
+      cell.textContent = v;
+      rowEl.appendChild(cell);
+    });
+    mat.appendChild(rowEl);
+  });
+}
+
+function selectToken(idx) {
+  if (selected !== null) {
+    document.getElementById(`vocab-${selected}`)?.classList.remove('selected');
+    document.getElementById(`row-${selected}`)?.classList.remove('highlighted');
+  }
+  selected = idx;
+  document.getElementById(`vocab-${idx}`).classList.add('selected');
+  document.getElementById(`row-${idx}`).classList.add('highlighted');
+
+  // Arrow
+  document.getElementById('arrow').classList.add('visible');
+  document.getElementById('arrow2').style.opacity = '1';
+  document.getElementById('arrow-label').classList.add('visible');
+  document.getElementById('arrow-idx').textContent = idx;
+
+  // Output vector
+  const outVec = document.getElementById('output-vec');
+  outVec.classList.add('visible');
+  outVec.innerHTML = embedMatrix[idx].map(v => {
+    const val = parseFloat(v);
+    return `<div class="output-cell" style="background:rgba(166,227,161,${0.1 + Math.abs(val)*0.3})">${v}</div>`;
+  }).join('');
+
+  // Code highlight
+  const char = VOCAB[idx].char === ' ' ? "' '" : `'${VOCAB[idx].char}'`;
+  document.getElementById('code-box').innerHTML = `
+    <span class="kw">embedding</span> = <span class="fn">nn.Embedding</span>(<span class="num">${VOCAB_SIZE}</span>, <span class="num">${N_EMBD}</span>)<br>
+    <br>
+    idx = <span class="num">${idx}</span>  <span style="color:#6c7086"># token ${char}</span><br>
+    vec = embedding(<span class="num">${idx}</span>)  <span style="color:#6c7086"># 取第 ${idx} 行</span><br>
+    <span style="color:#6c7086"># → shape: (${N_EMBD},)</span><br>
+    <span style="color:#6c7086"># → [${embedMatrix[idx].join(', ')}]</span>
+  `;
+}
+
+buildVocab();
+buildMatrix();
+</script>
+</body>
+</html>

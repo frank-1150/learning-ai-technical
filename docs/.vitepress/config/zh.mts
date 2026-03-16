@@ -115,9 +115,18 @@ function sidebar(): DefaultTheme.Sidebar {
           },
           {
             text: '神经网络',
-            collapsed: true,
+            collapsed: false,
             items: [
-              { text: '介绍', link: '/machine-learning/neural-networks/' }
+              { text: '介绍', link: '/machine-learning/neural-networks/' },
+              { text: 'ChatGPT 概览 (3Blue1Brown)', link: '/machine-learning/neural-networks/chatgpt-overview-3blue1brown' }
+            ]
+          },
+          {
+            text: "Let's Build GPT (Karpathy)",
+            collapsed: false,
+            items: [
+              { text: '视频概览', link: '/machine-learning/build-gpt-karpathy/' },
+              { text: 'PyTorch 基础操作', link: '/machine-learning/build-gpt-karpathy/pytorch-basics' }
             ]
           }
         ]
