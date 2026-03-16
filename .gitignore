@@ -1,0 +1,22 @@
+# Node
+node_modules/
+
+# VitePress build output and cache
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
+# Obsidian - keep config, ignore workspace/cache
+docs/.obsidian/workspace.json
+docs/.obsidian/workspace-mobile.json
+docs/.obsidian/graph.json
+docs/.obsidian/plugins/
+docs/.obsidian/community-plugins.json
+docs/.obsidian/hotkeys.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo

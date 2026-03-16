@@ -1,0 +1,16 @@
+{
+  "name": "learning-ai-technical",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "markdown-it-mathjax3": "^4.3.2",
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.13"
+  }
+}

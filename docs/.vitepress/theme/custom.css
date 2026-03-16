@@ -1,0 +1,25 @@
+:root {
+  --vp-c-brand-1: #5b8dff;
+  --vp-c-brand-2: #4a7aef;
+  --vp-c-brand-3: #3a6adf;
+  --vp-c-brand-soft: rgba(91, 141, 255, 0.14);
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #5b8dff 30%, #41d1ff);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #5b8dff50 50%, #41d1ff50 50%);
+  --vp-home-hero-image-filter: blur(44px);
+}
+
+.dark {
+  --vp-c-brand-1: #6d9fff;
+  --vp-c-brand-2: #5b8dff;
+  --vp-c-brand-3: #4a7aef;
+}
+
+.vp-doc div[class*='language-'] {
+  border-radius: 8px;
+}
+
+.vp-doc .math-display {
+  overflow-x: auto;
+}

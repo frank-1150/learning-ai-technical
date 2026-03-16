@@ -1,0 +1,127 @@
+import { defineConfig, type DefaultTheme } from 'vitepress'
+
+export const zh = defineConfig({
+  lang: 'zh-CN',
+  description: 'AI 技术学习笔记',
+
+  themeConfig: {
+    nav: nav(),
+    sidebar: sidebar(),
+
+    editLink: {
+      pattern: 'https://github.com/frank-1150/learning-ai-technical/edit/main/docs/:path',
+      text: '在 GitHub 上编辑此页面'
+    },
+
+    footer: {
+      message: '基于 MIT 许可发布',
+      copyright: `版权所有 © 2026-present`
+    },
+
+    docFooter: {
+      prev: '上一页',
+      next: '下一页'
+    },
+
+    outline: {
+      label: '页面导航',
+      level: [2, 3]
+    },
+
+    lastUpdated: {
+      text: '最后更新于',
+      formatOptions: { dateStyle: 'short', timeStyle: 'medium' }
+    },
+
+    returnToTopLabel: '回到顶部',
+    sidebarMenuLabel: '菜单',
+    darkModeSwitchLabel: '主题',
+    lightModeSwitchTitle: '切换到浅色模式',
+    darkModeSwitchTitle: '切换到深色模式'
+  }
+})
+
+function nav(): DefaultTheme.NavItem[] {
+  return [
+    { text: '首页', link: '/' },
+    {
+      text: 'AI 应用',
+      items: [
+        { text: 'RAG', link: '/ai-applications/rag/' },
+        { text: '智能体', link: '/ai-applications/agents/' },
+        { text: '提示工程', link: '/ai-applications/prompt-engineering/' }
+      ]
+    },
+    {
+      text: '机器学习',
+      items: [
+        { text: 'PyTorch', link: '/machine-learning/pytorch/' },
+        { text: '张量', link: '/machine-learning/tensors/' },
+        { text: '神经网络', link: '/machine-learning/neural-networks/' }
+      ]
+    }
+  ]
+}
+
+function sidebar(): DefaultTheme.Sidebar {
+  return {
+    '/ai-applications/': [
+      {
+        text: 'AI 应用',
+        items: [
+          { text: '概览', link: '/ai-applications/' },
+          {
+            text: 'RAG (检索增强生成)',
+            collapsed: false,
+            items: [
+              { text: '介绍', link: '/ai-applications/rag/' }
+            ]
+          },
+          {
+            text: '智能体 (Agents)',
+            collapsed: false,
+            items: [
+              { text: '介绍', link: '/ai-applications/agents/' }
+            ]
+          },
+          {
+            text: '提示工程',
+            collapsed: true,
+            items: [
+              { text: '介绍', link: '/ai-applications/prompt-engineering/' }
+            ]
+          }
+        ]
+      }
+    ],
+    '/machine-learning/': [
+      {
+        text: '机器学习',
+        items: [
+          { text: '概览', link: '/machine-learning/' },
+          {
+            text: 'PyTorch',
+            collapsed: false,
+            items: [
+              { text: '介绍', link: '/machine-learning/pytorch/' }
+            ]
+          },
+          {
+            text: '张量 (Tensors)',
+            collapsed: false,
+            items: [
+              { text: '介绍', link: '/machine-learning/tensors/' }
+            ]
+          },
+          {
+            text: '神经网络',
+            collapsed: true,
+            items: [
+              { text: '介绍', link: '/machine-learning/neural-networks/' }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
