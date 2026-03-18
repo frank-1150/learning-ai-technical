@@ -10,6 +10,27 @@ This project has a **bilingual (zh/en)** VitePress site. When adding or removing
 - **VitePress treats dead links as build errors** — if you delete a page, you must remove all links to it across both locales, or the CI build will fail.
 - Interactive HTML visualizations go in `docs/public/` and are referenced via the `<HtmlVisualization>` Vue component.
 
+## Interactive Visualization Gotchas
+
+- Visualizations are loaded in `<iframe sandbox="allow-scripts allow-same-origin">`. Accessing `window.parent.document` may throw due to sandbox restrictions — always wrap in `try/catch`, but **never put render logic inside the try block** or it will be silently skipped on error.
+- **Temporal Dead Zone (TDZ)**: `const`/`let` variables are NOT hoisted. If a function like `syncTheme()` calls `render()`/`rebuild()` which reference `const`/`let` variables, `syncTheme()` must be called **after** all those declarations. Putting it at the top of `<script>` will cause a silent `ReferenceError: Cannot access 'X' before initialization`.
+- Correct pattern for visualization scripts:
+  ```
+  <script>
+  // 1. All const/let declarations and function definitions first
+  const data = [...];
+  function render() { /* uses data */ }
+
+  // 2. Theme sync and initial render LAST
+  function syncTheme() {
+    try { /* read parent theme */ } catch(e) {}
+    render();
+  }
+  syncTheme();
+  try { new MutationObserver(syncTheme).observe(...); } catch(e) {}
+  </script>
+  ```
+
 ## GitHub Actions Deployment
 
 - The deploy workflow is at `.github/workflows/deploy.yml`.
