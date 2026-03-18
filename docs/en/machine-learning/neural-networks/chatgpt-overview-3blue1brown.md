@@ -20,4 +20,4 @@ Breaking down GPT-3's parameters. Out of 175B parameters:
 2. Multi-head attention accounts for 14.4 billion × 4 = 57.6 billion.
 3. The multi-layer neural network accounts for the remaining parameters, roughly. This shows that most of the knowledge is actually stored in the MLP weights. Chapter 7 of the video explains how these parameters store information numerically.
 
-![](../../images/Pasted%20image%2020260315212820.png)
+![](../../../images/Pasted%20image%2020260315212820.png)
