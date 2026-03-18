@@ -38,9 +38,8 @@ function nav(): DefaultTheme.NavItem[] {
     {
       text: 'Machine Learning',
       items: [
-        { text: 'PyTorch', link: '/en/machine-learning/pytorch/' },
-        { text: 'Tensors', link: '/en/machine-learning/tensors/' },
-        { text: 'Neural Networks', link: '/en/machine-learning/neural-networks/' }
+        { text: 'Neural Networks', link: '/en/machine-learning/neural-networks/' },
+        { text: 'Inference & Hardware', link: '/en/machine-learning/inference/nvidia-vera-rubin-lpx' }
       ]
     }
   ]
@@ -83,17 +82,10 @@ function sidebar(): DefaultTheme.Sidebar {
         items: [
           { text: 'Overview', link: '/en/machine-learning/' },
           {
-            text: 'PyTorch',
+            text: 'Inference & Hardware',
             collapsed: false,
             items: [
-              { text: 'Introduction', link: '/en/machine-learning/pytorch/' }
-            ]
-          },
-          {
-            text: 'Tensors',
-            collapsed: false,
-            items: [
-              { text: 'Introduction', link: '/en/machine-learning/tensors/' }
+              { text: 'NVIDIA Vera Rubin + LPX', link: '/en/machine-learning/inference/nvidia-vera-rubin-lpx' }
             ]
           },
           {

@@ -55,9 +55,8 @@ function nav(): DefaultTheme.NavItem[] {
     {
       text: '机器学习',
       items: [
-        { text: 'PyTorch', link: '/machine-learning/pytorch/' },
-        { text: '张量', link: '/machine-learning/tensors/' },
-        { text: '神经网络', link: '/machine-learning/neural-networks/' }
+        { text: '神经网络', link: '/machine-learning/neural-networks/' },
+        { text: '推理优化与硬件', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' }
       ]
     }
   ]
@@ -100,25 +99,18 @@ function sidebar(): DefaultTheme.Sidebar {
         items: [
           { text: '概览', link: '/machine-learning/' },
           {
-            text: 'PyTorch',
-            collapsed: false,
-            items: [
-              { text: '介绍', link: '/machine-learning/pytorch/' }
-            ]
-          },
-          {
-            text: '张量 (Tensors)',
-            collapsed: false,
-            items: [
-              { text: '介绍', link: '/machine-learning/tensors/' }
-            ]
-          },
-          {
             text: '神经网络',
             collapsed: false,
             items: [
               { text: '介绍', link: '/machine-learning/neural-networks/' },
               { text: 'ChatGPT 概览 (3Blue1Brown)', link: '/machine-learning/neural-networks/chatgpt-overview-3blue1brown' }
+            ]
+          },
+          {
+            text: '推理优化与硬件',
+            collapsed: false,
+            items: [
+              { text: 'NVIDIA Vera Rubin + LPX', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' }
             ]
           },
           {
