@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prefill vs Decode</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --dim: #7f849c;
+    --surface: #181825; --border: #45475a; --overlay: #313244;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af;
+    --green-bg: rgba(166,227,161,0.15); --green-border: rgba(166,227,161,0.3);
+    --red-bg: rgba(243,139,168,0.15); --red-border: rgba(243,139,168,0.3);
+    --green-insight-bg: rgba(166,227,161,0.1); --red-insight-bg: rgba(243,139,168,0.1);
+    --matrix-input-prefill: #a6e3a1; --matrix-input-decode: #f38ba8;
+    --matrix-weight: #89b4fa; --matrix-output: #f9e2af;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --dim: #7c7f93;
+    --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+    --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d;
+    --green-bg: rgba(64,160,43,0.12); --green-border: rgba(64,160,43,0.3);
+    --red-bg: rgba(210,15,57,0.12); --red-border: rgba(210,15,57,0.3);
+    --green-insight-bg: rgba(64,160,43,0.08); --red-insight-bg: rgba(210,15,57,0.08);
+    --matrix-input-prefill: #40a02b; --matrix-input-decode: #d20f39;
+    --matrix-weight: #1e66f5; --matrix-output: #df8e1d;
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 24px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 860px; margin: 0 auto; }
+  .phase-toggle { display: flex; gap: 12px; margin-bottom: 24px; justify-content: center; }
+  .phase-btn {
+    padding: 10px 28px; border: 2px solid var(--border); border-radius: 8px;
+    background: transparent; color: var(--fg); font-family: inherit;
+    font-size: 14px; cursor: pointer; transition: all 0.3s;
+  }
+  .phase-btn.active-prefill { border-color: var(--green); background: var(--green-bg); color: var(--green); }
+  .phase-btn.active-decode { border-color: var(--red); background: var(--red-bg); color: var(--red); }
+  .phase-btn:hover { border-color: var(--blue); }
+  .svg-container { display: flex; justify-content: center; overflow: visible; }
+  .svg-container svg { max-width: 100%; height: auto; }
+  .stats-panel { margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; text-align: center;
+  }
+  .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .stat-value { font-size: 18px; font-weight: bold; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.red { color: var(--red); }
+  .stat-value.yellow { color: var(--yellow); }
+  .stat-value.blue { color: var(--blue); }
+  .insight-box {
+    margin-top: 16px; padding: 12px 16px; border-radius: 8px;
+    font-size: 13px; line-height: 1.6; text-align: center;
+  }
+  .insight-prefill { background: var(--green-insight-bg); border: 1px solid var(--green-border); color: var(--green); }
+  .insight-decode { background: var(--red-insight-bg); border: 1px solid var(--red-border); color: var(--red); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="phase-toggle">
+    <button class="phase-btn active-prefill" id="btn-prefill" onclick="showPhase('prefill')">Prefill（预填充）</button>
+    <button class="phase-btn" id="btn-decode" onclick="showPhase('decode')">Decode（逐 Token 生成）</button>
+  </div>
+  <div class="svg-container" id="svg-container"></div>
+  <div class="stats-panel" id="stats-panel"></div>
+  <div class="insight-box" id="insight-box"></div>
+</div>
+
+<script>
+// Theme sync with parent VitePress
+function syncTheme() {
+  try {
+    const isDark = window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+    render(); // re-render SVG with new colors
+  } catch(e) {}
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+
+function getColor(varName) {
+  return getComputedStyle(document.body).getPropertyValue(varName).trim();
+}
+
+let currentPhase = 'prefill';
+
+function showPhase(phase) {
+  currentPhase = phase;
+  document.getElementById('btn-prefill').className = phase === 'prefill' ? 'phase-btn active-prefill' : 'phase-btn';
+  document.getElementById('btn-decode').className = phase === 'decode' ? 'phase-btn active-decode' : 'phase-btn';
+  render();
+}
+
+const svgNS = 'http://www.w3.org/2000/svg';
+function drawRect(svg, x, y, w, h, fill, opacity) {
+  const r = document.createElementNS(svgNS, 'rect');
+  r.setAttribute('x', x); r.setAttribute('y', y);
+  r.setAttribute('width', w); r.setAttribute('height', h);
+  r.setAttribute('rx', 3); r.setAttribute('fill', fill);
+  r.setAttribute('fill-opacity', opacity || 1);
+  r.setAttribute('stroke', fill); r.setAttribute('stroke-opacity', 0.6);
+  r.setAttribute('stroke-width', 1.5);
+  svg.appendChild(r);
+}
+function drawText(svg, x, y, text, color, size, anchor) {
+  const t = document.createElementNS(svgNS, 'text');
+  t.setAttribute('x', x); t.setAttribute('y', y);
+  t.setAttribute('fill', color); t.setAttribute('font-size', size || 11);
+  t.setAttribute('font-family', 'inherit'); t.setAttribute('text-anchor', anchor || 'middle');
+  t.textContent = text;
+  svg.appendChild(t);
+}
+function drawDim(svg, x1, y1, x2, y2, label, color, side) {
+  const g = document.createElementNS(svgNS, 'g');
+  const line = document.createElementNS(svgNS, 'line');
+  line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+  line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+  line.setAttribute('stroke', color); line.setAttribute('stroke-width', 1);
+  line.setAttribute('stroke-dasharray', '3,2');
+  g.appendChild(line);
+  const tick = 4;
+  if (y1 === y2) {
+    for (const xx of [x1, x2]) {
+      const l = document.createElementNS(svgNS, 'line');
+      l.setAttribute('x1', xx); l.setAttribute('y1', y1-tick); l.setAttribute('x2', xx); l.setAttribute('y2', y1+tick);
+      l.setAttribute('stroke', color); l.setAttribute('stroke-width', 1); g.appendChild(l);
+    }
+    drawText(svg, (x1+x2)/2, y1 + (side==='bottom'?14:-6), label, color, 10);
+  } else {
+    for (const yy of [y1, y2]) {
+      const l = document.createElementNS(svgNS, 'line');
+      l.setAttribute('x1', x1-tick); l.setAttribute('y1', yy); l.setAttribute('x2', x1+tick); l.setAttribute('y2', yy);
+      l.setAttribute('stroke', color); l.setAttribute('stroke-width', 1); g.appendChild(l);
+    }
+    const t = document.createElementNS(svgNS, 'text');
+    const tx = x1 + (side==='right'? 14 : -8);
+    const ty = (y1+y2)/2;
+    t.setAttribute('x', tx); t.setAttribute('y', ty); t.setAttribute('fill', color);
+    t.setAttribute('font-size', 10); t.setAttribute('font-family', 'inherit');
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('transform', `rotate(-90, ${tx}, ${ty})`);
+    t.textContent = label; svg.appendChild(t);
+  }
+  svg.appendChild(g);
+}
+
+function render() {
+  const container = document.getElementById('svg-container');
+  const dimColor = getColor('--dim');
+  const mutedColor = getColor('--muted');
+
+  const isPrefill = currentPhase === 'prefill';
+  const inputColor = isPrefill ? getColor('--matrix-input-prefill') : getColor('--matrix-input-decode');
+  const weightColor = getColor('--matrix-weight');
+  const outputColor = getColor('--matrix-output');
+
+  const unit = 48 / 4096;
+  const colsA = Math.round(4096 * unit);    // 48
+  const colsB = Math.round(16384 * unit);   // 192
+  const rowsI = isPrefill ? Math.round(1024 * unit) : 3;  // 12 or 3
+  const rowsW = Math.round(4096 * unit);    // 48
+  const rowsO = rowsI;
+
+  // Layout with extra margin for Weight's left-side 4096 label
+  const gap = 36;
+  const leftM = 30;  // left margin for input row label
+  const rightM = 24; // right margin
+  const weightLabelGap = 20; // space for weight height label on left of weight
+  const totalW = leftM + colsA + gap + weightLabelGap + colsB + gap + colsB + rightM;
+  const totalH = 30 + rowsW + 36;
+  const centerY = 30 + rowsW / 2;
+
+  const inputX = leftM;
+  const weightX = leftM + colsA + gap + weightLabelGap;
+  const outputX = weightX + colsB + gap;
+  const inputY = centerY - rowsI/2;
+  const weightY = centerY - rowsW/2;
+  const outputY = centerY - rowsO/2;
+
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
+  svg.setAttribute('width', totalW); svg.setAttribute('height', totalH);
+  svg.style.overflow = 'visible';
+
+  // Matrices
+  drawRect(svg, inputX, inputY, colsA, rowsI, inputColor, 0.4);
+  drawRect(svg, weightX, weightY, colsB, rowsW, weightColor, 0.25);
+  drawRect(svg, outputX, outputY, colsB, rowsO, outputColor, 0.4);
+
+  // Operators
+  const op1X = leftM + colsA + (gap + weightLabelGap) / 2;
+  const op2X = weightX + colsB + gap / 2;
+  drawText(svg, op1X, centerY + 6, '×', mutedColor, 22);
+  drawText(svg, op2X, centerY + 6, '=', mutedColor, 22);
+
+  // Names above
+  const nameY = Math.min(inputY, weightY) - 16;
+  drawText(svg, inputX + colsA/2, nameY, 'Input', inputColor, 12);
+  drawText(svg, weightX + colsB/2, nameY, 'Weight (FFN)', weightColor, 12);
+  drawText(svg, outputX + colsB/2, nameY, 'Output', outputColor, 12);
+
+  // Dimension labels
+  // Input width
+  drawDim(svg, inputX, inputY + rowsI + 14, inputX + colsA, inputY + rowsI + 14, '4096', dimColor, 'bottom');
+  // Input height
+  if (isPrefill) {
+    drawDim(svg, inputX - 6, inputY, inputX - 6, inputY + rowsI, '1024', dimColor, 'left');
+  } else {
+    drawText(svg, inputX - 10, inputY + rowsI/2 + 4, '1', dimColor, 10, 'end');
+  }
+
+  // Weight width (bottom)
+  drawDim(svg, weightX, weightY + rowsW + 14, weightX + colsB, weightY + rowsW + 14, '16384', dimColor, 'bottom');
+  // Weight height (LEFT side of weight, not right — avoids = sign clash)
+  drawDim(svg, weightX - 6, weightY, weightX - 6, weightY + rowsW, '4096', dimColor, 'left');
+
+  // Output width
+  drawDim(svg, outputX, outputY + rowsO + 14, outputX + colsB, outputY + rowsO + 14, '16384', dimColor, 'bottom');
+  // Output height
+  if (isPrefill) {
+    drawDim(svg, outputX + colsB + 6, outputY, outputX + colsB + 6, outputY + rowsO, '1024', dimColor, 'right');
+  } else {
+    drawText(svg, outputX + colsB + 14, outputY + rowsO/2 + 4, '1', dimColor, 10, 'start');
+  }
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+
+  // Stats
+  const stats = document.getElementById('stats-panel');
+  if (isPrefill) {
+    stats.innerHTML = `
+      <div class="stat-card"><div class="stat-label">权重搬运</div><div class="stat-value blue">256 MB</div></div>
+      <div class="stat-card"><div class="stat-label">计算量</div><div class="stat-value yellow">274 GFLOPs</div></div>
+      <div class="stat-card"><div class="stat-label">Arithmetic Intensity</div><div class="stat-value green">~1075</div></div>
+      <div class="stat-card"><div class="stat-label">GPU 利用率</div><div class="stat-value green">高</div></div>`;
+  } else {
+    stats.innerHTML = `
+      <div class="stat-card"><div class="stat-label">权重搬运</div><div class="stat-value blue">256 MB</div></div>
+      <div class="stat-card"><div class="stat-label">计算量</div><div class="stat-value yellow">268 MFLOPs</div></div>
+      <div class="stat-card"><div class="stat-label">Arithmetic Intensity</div><div class="stat-value red">~1</div></div>
+      <div class="stat-card"><div class="stat-label">GPU 利用率</div><div class="stat-value red">< 1%</div></div>`;
+  }
+
+  const insight = document.getElementById('insight-box');
+  if (isPrefill) {
+    insight.className = 'insight-box insight-prefill';
+    insight.textContent = '1024 个 token 共享同一份权重 → 搬一次数据做 1024 倍计算 → GPU 算力被充分利用（Compute-Bound）';
+  } else {
+    insight.className = 'insight-box insight-decode';
+    insight.textContent = '只有 1 个 token，但仍要加载全部 256 MB 权重 → 搬运时间远大于计算时间 → GPU 99% 算力在空转（Memory-Bound）';
+  }
+}
+
+render();
+</script>
+</body>
+</html>
