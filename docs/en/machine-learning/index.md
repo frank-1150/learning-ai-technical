@@ -10,6 +10,5 @@ This section covers core machine learning theory and engineering practice.
 
 ## Topics
 
-- [PyTorch](./pytorch/) — Deep learning framework hands-on
-- [Tensors](./tensors/) — Tensor operation fundamentals
 - [Neural Networks](./neural-networks/) — Neural network principles and implementation
+- [Inference & Hardware](./inference/nvidia-vera-rubin-lpx) — GPU/LPU cooperative inference, Roofline Model
