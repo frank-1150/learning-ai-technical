@@ -79,8 +79,8 @@ function syncTheme() {
   try {
     const isDark = window.parent.document.documentElement.classList.contains('dark');
     document.body.classList.toggle('light', !isDark);
-    render(); // re-render SVG with new colors
   } catch(e) {}
+  render();
 }
 syncTheme();
 try {

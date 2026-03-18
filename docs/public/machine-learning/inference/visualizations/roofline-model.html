@@ -52,8 +52,8 @@ function syncTheme() {
   try {
     const isDark = window.parent.document.documentElement.classList.contains('dark');
     document.body.classList.toggle('light', !isDark);
-    rebuild();
   } catch(e) {}
+  rebuild();
 }
 syncTheme();
 try {
