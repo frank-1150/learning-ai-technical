@@ -47,21 +47,6 @@
 </div>
 
 <script>
-// Theme sync
-function syncTheme() {
-  try {
-    const isDark = window.parent.document.documentElement.classList.contains('dark');
-    document.body.classList.toggle('light', !isDark);
-  } catch(e) {}
-  rebuild();
-}
-syncTheme();
-try {
-  new MutationObserver(syncTheme).observe(
-    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
-  );
-} catch(e) {}
-
 function cv(v) { return getComputedStyle(document.body).getPropertyValue(v).trim(); }
 
 const W = 840, H = 440;
@@ -198,6 +183,21 @@ function rebuild() {
   });
   svg.addEventListener('mouseleave', () => { tooltip.style.opacity = '0'; });
 }
+
+// Theme sync — must be after all const/let declarations
+function syncTheme() {
+  try {
+    const isDark = window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  rebuild();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
 </script>
 </body>
 </html>

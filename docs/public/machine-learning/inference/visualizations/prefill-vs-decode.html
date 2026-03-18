@@ -74,21 +74,6 @@
 </div>
 
 <script>
-// Theme sync with parent VitePress
-function syncTheme() {
-  try {
-    const isDark = window.parent.document.documentElement.classList.contains('dark');
-    document.body.classList.toggle('light', !isDark);
-  } catch(e) {}
-  render();
-}
-syncTheme();
-try {
-  new MutationObserver(syncTheme).observe(
-    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
-  );
-} catch(e) {}
-
 function getColor(varName) {
   return getComputedStyle(document.body).getPropertyValue(varName).trim();
 }
@@ -263,7 +248,20 @@ function render() {
   }
 }
 
-render();
+// Theme sync with parent VitePress — must be after all const/let declarations
+function syncTheme() {
+  try {
+    const isDark = window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
 </script>
 </body>
 </html>
