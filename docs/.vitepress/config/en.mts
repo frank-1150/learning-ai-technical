@@ -39,6 +39,7 @@ function nav(): DefaultTheme.NavItem[] {
       text: 'Machine Learning',
       items: [
         { text: 'Neural Networks', link: '/en/machine-learning/neural-networks/' },
+        { text: "Let's Build GPT", link: '/en/machine-learning/build-gpt-karpathy/' },
         { text: 'Inference & Hardware', link: '/en/machine-learning/inference/nvidia-vera-rubin-lpx' }
       ]
     }
@@ -82,17 +83,26 @@ function sidebar(): DefaultTheme.Sidebar {
         items: [
           { text: 'Overview', link: '/en/machine-learning/' },
           {
+            text: 'Neural Networks',
+            collapsed: false,
+            items: [
+              { text: 'Introduction', link: '/en/machine-learning/neural-networks/' },
+              { text: 'ChatGPT Overview (3Blue1Brown)', link: '/en/machine-learning/neural-networks/chatgpt-overview-3blue1brown' }
+            ]
+          },
+          {
+            text: "Let's Build GPT (Karpathy)",
+            collapsed: false,
+            items: [
+              { text: 'Video Overview', link: '/en/machine-learning/build-gpt-karpathy/' },
+              { text: 'PyTorch Basics', link: '/en/machine-learning/build-gpt-karpathy/pytorch-basics' }
+            ]
+          },
+          {
             text: 'Inference & Hardware',
             collapsed: false,
             items: [
               { text: 'NVIDIA Vera Rubin + LPX', link: '/en/machine-learning/inference/nvidia-vera-rubin-lpx' }
-            ]
-          },
-          {
-            text: 'Neural Networks',
-            collapsed: true,
-            items: [
-              { text: 'Introduction', link: '/en/machine-learning/neural-networks/' }
             ]
           }
         ]
