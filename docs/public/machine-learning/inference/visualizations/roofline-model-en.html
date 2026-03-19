@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roofline Model</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --dim: #a6adc8;
+    --grid: #313244; --surface: #181825; --border: #45475a;
+    --roofline: #cdd6f4; --green: #a6e3a1; --red: #f38ba8;
+    --blue: #89b4fa; --yellow: #f9e2af;
+    --red-fade: rgba(243,139,168,0.5); --green-fade: rgba(166,227,161,0.5);
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --dim: #6c6f85;
+    --grid: #dce0e8; --surface: #e6e9ef; --border: #ccd0da;
+    --roofline: #4c4f69; --green: #40a02b; --red: #d20f39;
+    --blue: #1e66f5; --yellow: #df8e1d;
+    --red-fade: rgba(210,15,57,0.45); --green-fade: rgba(64,160,43,0.45);
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 880px; margin: 0 auto; }
+  .svg-wrap { display: flex; justify-content: center; }
+  .svg-wrap svg { max-width: 100%; height: auto; }
+  .legend { display: flex; gap: 20px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .tooltip-box {
+    position: fixed; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; font-size: 12px; color: var(--fg);
+    pointer-events: none; opacity: 0; transition: opacity 0.15s;
+    max-width: 280px; line-height: 1.5; z-index: 100; white-space: pre-line;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="svg-wrap" id="chart"></div>
+  <div class="legend" id="legend"></div>
+  <div class="tooltip-box" id="tooltip"></div>
+</div>
+
+<script>
+function cv(v) { return getComputedStyle(document.body).getPropertyValue(v).trim(); }
+
+const W = 840, H = 440;
+const margin = { top: 36, right: 36, bottom: 56, left: 72 };
+const pW = W - margin.left - margin.right;
+const pH = H - margin.top - margin.bottom;
+const xMin = 0.1, xMax = 5000, yMin = 0.1, yMax = 2000;
+
+function lx(v) { return margin.left + (Math.log10(v)-Math.log10(xMin))/(Math.log10(xMax)-Math.log10(xMin))*pW; }
+function ly(v) { return margin.top + pH - (Math.log10(v)-Math.log10(yMin))/(Math.log10(yMax)-Math.log10(yMin))*pH; }
+
+const peakComp = 989, peakBW = 3.35, ridge = peakComp/peakBW;
+const lpuComp = 120, lpuBW = 12, lpuRidge = lpuComp/lpuBW;
+
+const pointsDef = [
+  { x: 1.05, cVar: '--red', label: 'FFN Decode (batch_size=1) on GPU',
+    desc: 'AI ≈ 1, far below Ridge Point 295\nActual GPU perf ~3.5 TFLOPS\nUtilization < 0.4%', gpu: true },
+  { x: 1075, cVar: '--green', label: 'FFN Prefill (batch_size=1024)',
+    desc: 'AI ≈ 1075, exceeds Ridge Point\nGPU reaches peak 989 TFLOPS\nUtilization ~100%', gpu: true },
+  { x: 5, cVar: '--yellow', label: 'Attention Decode',
+    desc: 'AI ≈ 5, still in Memory-Bound region\nLimited by KV Cache reads\nGPU actual ~16.7 TFLOPS', gpu: true },
+  { x: 1.05, cVar: '--blue', label: 'FFN Decode (batch_size=1) on LPU',
+    desc: 'AI ≈ 1, but LPU Ridge Point only 10\nCloser to Compute-Bound region\nLPU actual ~12.6 TFLOPS, higher utilization', gpu: false },
+];
+
+const ns = 'http://www.w3.org/2000/svg';
+function el(tag, attrs) {
+  const e = document.createElementNS(ns, tag);
+  for (const [k, v] of Object.entries(attrs||{})) e.setAttribute(k, v);
+  return e;
+}
+
+function rebuild() {
+  const rooflineC = cv('--roofline'), gridC = cv('--grid'), mutedC = cv('--muted'),
+        dimC = cv('--dim'), bgC = cv('--bg');
+
+  const points = pointsDef.map(p => ({
+    ...p, color: cv(p.cVar),
+    y: p.gpu ? Math.min(p.x * peakBW, peakComp) : Math.min(p.x * lpuBW, lpuComp)
+  }));
+
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H });
+
+  // Grid
+  const gg = el('g', { stroke: gridC, 'stroke-width': 0.5 });
+  [0.1,1,10,100,1000].forEach(v => {
+    gg.appendChild(el('line', { x1:lx(v), y1:margin.top, x2:lx(v), y2:margin.top+pH }));
+    gg.appendChild(el('line', { x1:margin.left, y1:ly(v), x2:margin.left+pW, y2:ly(v) }));
+  });
+  svg.appendChild(gg);
+
+  // GPU Roofline
+  svg.appendChild(el('path', {
+    d: `M${lx(xMin)},${ly(xMin*peakBW)} L${lx(ridge)},${ly(peakComp)} L${lx(xMax)},${ly(peakComp)}`,
+    stroke: rooflineC, 'stroke-width': 2, fill: 'none'
+  }));
+  const gl = el('text', { x:lx(ridge)+8, y:ly(peakComp)-8, fill:rooflineC, 'font-size':11, 'font-family':'inherit' });
+  gl.textContent = 'H100 GPU: 989 TFLOPS'; svg.appendChild(gl);
+
+  // LPU Roofline
+  const blueC = cv('--blue');
+  svg.appendChild(el('path', {
+    d: `M${lx(xMin)},${ly(xMin*lpuBW)} L${lx(lpuRidge)},${ly(lpuComp)} L${lx(xMax)},${ly(lpuComp)}`,
+    stroke: blueC, 'stroke-width': 2, fill: 'none', 'stroke-dasharray': '6,4'
+  }));
+  const ll = el('text', { x:lx(lpuRidge)+8, y:ly(lpuComp)-8, fill:blueC, 'font-size':11, 'font-family':'inherit' });
+  ll.textContent = 'LPU: 120 TFLOPS / 12 TB/s'; svg.appendChild(ll);
+
+  // Ridge verticals
+  const redC = cv('--red');
+  svg.appendChild(el('line', { x1:lx(ridge), y1:margin.top, x2:lx(ridge), y2:margin.top+pH, stroke:redC, 'stroke-width':1, 'stroke-dasharray':'4,4' }));
+  const grl = el('text', { x:lx(ridge), y:margin.top+pH+16, fill:redC, 'font-size':10, 'font-family':'inherit', 'text-anchor':'middle' });
+  grl.textContent = 'GPU Ridge ≈ 295'; svg.appendChild(grl);
+
+  svg.appendChild(el('line', { x1:lx(lpuRidge), y1:margin.top, x2:lx(lpuRidge), y2:margin.top+pH, stroke:blueC, 'stroke-width':1, 'stroke-dasharray':'4,4' }));
+  const lrl = el('text', { x:lx(lpuRidge), y:margin.top+14, fill:blueC, 'font-size':10, 'font-family':'inherit', 'text-anchor':'middle' });
+  lrl.textContent = 'LPU Ridge ≈ 10'; svg.appendChild(lrl);
+
+  // Zone labels
+  const ml = el('text', { x:lx(0.4), y:margin.top+30, fill:cv('--red-fade'), 'font-size':12, 'font-family':'inherit' });
+  ml.textContent = '← Memory-Bound'; svg.appendChild(ml);
+  const cl = el('text', { x:lx(600), y:margin.top+30, fill:cv('--green-fade'), 'font-size':12, 'font-family':'inherit' });
+  cl.textContent = 'Compute-Bound →'; svg.appendChild(cl);
+
+  // Points
+  points.forEach(p => {
+    const c = el('circle', { cx:lx(p.x), cy:ly(p.y), r:7, fill:p.color, stroke:bgC, 'stroke-width':2 });
+    c.style.cursor = 'pointer'; c.dataset.label = p.label; c.dataset.desc = p.desc; c.dataset.color = p.color;
+    svg.appendChild(c);
+  });
+
+  // Ticks
+  const tg = el('g', { fill:mutedC, 'font-size':10, 'font-family':'inherit' });
+  [0.1,1,10,100,1000].forEach(v => {
+    const xt = el('text', { x:lx(v), y:margin.top+pH+30, 'text-anchor':'middle' });
+    xt.textContent = v>=1?v:'0.1'; tg.appendChild(xt);
+    const yt = el('text', { x:margin.left-8, y:ly(v)+4, 'text-anchor':'end' });
+    yt.textContent = v>=1?v:'0.1'; tg.appendChild(yt);
+  });
+  svg.appendChild(tg);
+
+  // Axis labels
+  const xal = el('text', { x:W/2, y:H-4, fill:dimC, 'font-size':12, 'font-family':'inherit', 'text-anchor':'middle' });
+  xal.textContent = 'Arithmetic Intensity (FLOPs/Byte)'; svg.appendChild(xal);
+  const yal = el('text', { x:14, y:H/2, fill:dimC, 'font-size':12, 'font-family':'inherit', 'text-anchor':'middle', transform:`rotate(-90,14,${H/2})` });
+  yal.textContent = 'Performance (TFLOPS)'; svg.appendChild(yal);
+
+  const chartEl = document.getElementById('chart');
+  chartEl.innerHTML = '';
+  chartEl.appendChild(svg);
+
+  // Legend
+  const legendEl = document.getElementById('legend');
+  legendEl.innerHTML = points.map(p =>
+    `<div class="legend-item"><div class="legend-dot" style="background:${p.color}"></div>${p.label}</div>`
+  ).join('');
+
+  // Tooltip
+  const tooltip = document.getElementById('tooltip');
+  svg.addEventListener('mousemove', e => {
+    const rect = svg.getBoundingClientRect();
+    const sx = W/rect.width, sy = H/rect.height;
+    const mx = (e.clientX - rect.left)*sx, my = (e.clientY - rect.top)*sy;
+    let hit = null;
+    svg.querySelectorAll('circle').forEach(c => {
+      const cx = +c.getAttribute('cx'), cy = +c.getAttribute('cy');
+      if (Math.hypot(mx-cx, my-cy) < 16) hit = c;
+    });
+    if (hit) {
+      tooltip.style.opacity = '1';
+      tooltip.style.left = (e.clientX+16)+'px'; tooltip.style.top = (e.clientY-10)+'px';
+      tooltip.innerHTML = `<span style="color:${hit.dataset.color};font-weight:bold">${hit.dataset.label}</span>\n${hit.dataset.desc}`;
+    } else { tooltip.style.opacity = '0'; }
+  });
+  svg.addEventListener('mouseleave', () => { tooltip.style.opacity = '0'; });
+}
+
+// Theme sync — must be after all const/let declarations
+function syncTheme() {
+  try {
+    const isDark = window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  rebuild();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

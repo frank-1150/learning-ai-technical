@@ -20,7 +20,7 @@ LLM inference consists of two distinct phases:
 | **GPU Utilization** | High (large matrix parallelism) | Extremely low (massive compute idle waiting for data) |
 
 <HtmlVisualization
-  src="/machine-learning/inference/visualizations/prefill-vs-decode.html"
+  src="/machine-learning/inference/visualizations/prefill-vs-decode-en.html"
   height="520px"
   title="Prefill vs Decode: Two Distinct Phases"
 />
@@ -70,7 +70,7 @@ Compare with Prefill phase: If batch has 1024 tokens, the same 256 MB of weights
 **Roofline Model** is a classic tool for analyzing hardware performance bottlenecks. It tells us: given an operation's Arithmetic Intensity, what limits the actual performance?
 
 <HtmlVisualization
-  src="/machine-learning/inference/visualizations/roofline-model.html"
+  src="/machine-learning/inference/visualizations/roofline-model-en.html"
   height="560px"
   title="Roofline Model: Memory-Bound vs Compute-Bound"
 />
@@ -99,7 +99,7 @@ Taking **NVIDIA H100 SXM** as example:
 Understanding the Memory-Bound problem reveals NVIDIA's design intent:
 
 <HtmlVisualization
-  src="/machine-learning/inference/visualizations/gpu-lpx-architecture.html"
+  src="/machine-learning/inference/visualizations/gpu-lpx-architecture-en.html"
   height="620px"
   title="Vera Rubin GPU + LPX Collaborative Inference Architecture"
 />

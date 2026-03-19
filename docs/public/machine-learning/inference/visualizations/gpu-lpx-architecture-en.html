@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU + LPX Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --dim: #a6adc8;
+    --surface: #181825; --border: #45475a; --overlay: #313244;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af;
+    --green-bg: rgba(166,227,161,0.05); --blue-bg: rgba(137,180,250,0.05);
+    --blue-box-border: rgba(137,180,250,0.3); --blue-box-bg: rgba(137,180,250,0.05);
+    --chip-bg: var(--bg);
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --dim: #6c6f85;
+    --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+    --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d;
+    --green-bg: rgba(64,160,43,0.06); --blue-bg: rgba(30,102,245,0.06);
+    --blue-box-border: rgba(30,102,245,0.25); --blue-box-bg: rgba(30,102,245,0.05);
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  .chips-row { display: flex; gap: 0; align-items: stretch; margin-bottom: 20px; }
+  .chip {
+    flex: 1; border-radius: 12px; padding: 16px;
+    border: 2px solid; min-height: 320px;
+  }
+  .gpu-chip { border-color: var(--green); background: var(--green-bg); }
+  .lpu-chip { border-color: var(--blue); background: var(--blue-bg); }
+  .chip-title {
+    font-size: 15px; font-weight: bold; margin-bottom: 8px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .gpu-chip .chip-title { color: var(--green); }
+  .lpu-chip .chip-title { color: var(--blue); }
+  .chip-specs { font-size: 11px; color: var(--muted); margin-bottom: 14px; line-height: 1.6; }
+  .op-block {
+    margin: 8px 0; padding: 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); font-size: 12px;
+  }
+  .op-block .op-name { font-weight: bold; margin-bottom: 4px; }
+  .op-block .op-detail { color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .op-attn .op-name { color: var(--green); }
+  .op-ffn .op-name { color: var(--blue); }
+  .op-prefill .op-name { color: var(--yellow); }
+  .op-disabled { opacity: 0.35; }
+  .op-disabled .op-name { color: var(--muted); text-decoration: line-through; }
+  .connection {
+    width: 120px; min-width: 120px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 16px 8px; gap: 8px;
+  }
+  .conn-arrow { display: flex; flex-direction: column; align-items: center; font-size: 10px; gap: 2px; }
+  .conn-arrow .arr-label { color: var(--muted); }
+  .conn-arrow .arr-value { font-weight: bold; }
+  .conn-arrow .arr-value.green { color: var(--green); }
+  .conn-arrow .arr-value.blue { color: var(--blue); }
+  .conn-specs { font-size: 10px; color: var(--muted); text-align: center; line-height: 1.6; margin: 4px 0; }
+  .reason-box {
+    margin-top: 8px; padding: 10px; border-radius: 8px;
+    border: 1px solid var(--blue-box-border); background: var(--blue-box-bg);
+    font-size: 11px; line-height: 1.7;
+  }
+  .reason-box .reason-title { color: var(--blue); font-weight: bold; margin-bottom: 4px; font-size: 12px; }
+  .reason-box .reason-item { color: var(--dim); }
+  .reason-box .checkmark { color: var(--green); }
+  .timeline {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; font-size: 12px;
+  }
+  .timeline-title { color: var(--yellow); font-weight: bold; margin-bottom: 12px; font-size: 13px; }
+  .timeline-row { display: flex; align-items: center; margin: 5px 0; }
+  .timeline-label { width: 44px; color: var(--muted); font-size: 11px; flex-shrink: 0; }
+  .timeline-bars { flex: 1; display: flex; height: 26px; gap: 2px; }
+  .tbar {
+    height: 100%; border-radius: 4px; display: flex; align-items: center;
+    justify-content: center; font-size: 10px; font-weight: bold;
+  }
+  .tbar-attn { background: var(--green); color: var(--bg); }
+  .tbar-ffn { background: var(--blue); color: var(--bg); }
+  .tbar-xfer { background: var(--yellow); min-width: 4px; }
+  .tbar-idle { background: var(--overlay); color: var(--muted); }
+  .timeline-note { margin-top: 10px; color: var(--muted); font-size: 11px; text-align: center; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="chips-row">
+    <div class="chip gpu-chip">
+      <div class="chip-title">Vera Rubin GPU</div>
+      <div class="chip-specs">~1000+ TFLOPS (FP16)<br>HBM4: ~4 TB/s bandwidth<br>Ridge Point ≈ 250+</div>
+      <div class="op-block op-prefill">
+        <div class="op-name">Prefill (all on GPU)</div>
+        <div class="op-detail">Large batch matrix multiplication → Compute-Bound ✓</div>
+      </div>
+      <div class="op-block op-attn">
+        <div class="op-name">Decode: Attention</div>
+        <div class="op-detail">Q·K<sup>T</sup>, Softmax, ·V<br>Involves KV Cache reads</div>
+      </div>
+      <div class="op-block op-disabled">
+        <div class="op-name">Decode: FFN ← No longer here</div>
+        <div class="op-detail">AI ≈ 1, GPU utilization &lt; 1% ✗</div>
+      </div>
+    </div>
+    <div class="connection">
+      <div class="conn-arrow">
+        <span class="arr-value green">Attention output</span>
+        <svg width="60" height="20"><path d="M4,10 L56,10" stroke="var(--green)" stroke-width="2" marker-end="url(#aR)"/><defs><marker id="aR" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="var(--green)"/></marker></defs></svg>
+        <span class="arr-label">~8 KB/token</span>
+      </div>
+      <div class="conn-specs">NVLink high-speed interconnect<br>~900 GB/s<br>Latency ~tens of ns</div>
+      <div class="conn-arrow">
+        <svg width="60" height="20"><path d="M56,10 L4,10" stroke="var(--blue)" stroke-width="2" marker-end="url(#aL)"/><defs><marker id="aL" markerWidth="7" markerHeight="7" refX="1" refY="3.5" orient="auto"><path d="M7,0 L0,3.5 L7,7" fill="var(--blue)"/></marker></defs></svg>
+        <span class="arr-value blue">FFN output</span>
+        <span class="arr-label">~8 KB/token</span>
+      </div>
+    </div>
+    <div class="chip lpu-chip">
+      <div class="chip-title">LPX (Linear Processor)</div>
+      <div class="chip-specs">~100-200 TFLOPS<br>Ultra-high bandwidth memory: ~12+ TB/s<br>Ridge Point ≈ 10-15</div>
+      <div class="op-block op-ffn">
+        <div class="op-name">Decode: FFN (MLP)</div>
+        <div class="op-detail">Matrix×vector, AI ≈ 1<br>LPU bandwidth matched → High utilization ✓</div>
+      </div>
+      <div class="reason-box">
+        <div class="reason-title">Why better suited?</div>
+        <div class="reason-item"><span class="checkmark">✓</span> 3-4x GPU memory bandwidth</div>
+        <div class="reason-item"><span class="checkmark">✓</span> Moderate compute, no waste</div>
+        <div class="reason-item"><span class="checkmark">✓</span> Low Ridge Point → AI=1 closer to full load</div>
+        <div class="reason-item"><span class="checkmark">✓</span> Weights stored locally, no GPU transfer needed</div>
+      </div>
+    </div>
+  </div>
+  <div class="timeline">
+    <div class="timeline-title">Pipeline Timing (Layer-by-Layer Decode)</div>
+    <div class="timeline-row">
+      <div class="timeline-label">GPU</div>
+      <div class="timeline-bars">
+        <div class="tbar tbar-attn" style="flex:3;">Attn L1</div>
+        <div class="tbar tbar-xfer" style="flex:0.3;"></div>
+        <div class="tbar tbar-idle" style="flex:2.5;">idle</div>
+        <div class="tbar tbar-attn" style="flex:3;">Attn L2</div>
+        <div class="tbar tbar-xfer" style="flex:0.3;"></div>
+        <div class="tbar tbar-idle" style="flex:2.5;">idle</div>
+        <div class="tbar tbar-attn" style="flex:3;">Attn L3</div>
+      </div>
+    </div>
+    <div class="timeline-row">
+      <div class="timeline-label">LPU</div>
+      <div class="timeline-bars">
+        <div class="tbar tbar-idle" style="flex:3;">idle</div>
+        <div class="tbar tbar-xfer" style="flex:0.3;"></div>
+        <div class="tbar tbar-ffn" style="flex:2.5;">FFN L1</div>
+        <div class="tbar tbar-xfer" style="flex:0.3;"></div>
+        <div class="tbar tbar-idle" style="flex:0.3;"></div>
+        <div class="tbar tbar-ffn" style="flex:2.5;">FFN L2</div>
+        <div class="tbar tbar-xfer" style="flex:0.3;"></div>
+        <div class="tbar tbar-idle" style="flex:0.3;"></div>
+        <div class="tbar tbar-ffn" style="flex:2.5;">FFN L3</div>
+      </div>
+    </div>
+    <div class="timeline-note">FFN of Layer N can execute in parallel with Attention of Layer N+1 → Pipeline hides transfer latency</div>
+  </div>
+</div>
+
+<script>
+// Theme sync with parent VitePress
+function syncTheme() {
+  try {
+    const isDark = window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>
