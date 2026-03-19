@@ -12,6 +12,9 @@ hero:
     - theme: alt
       text: 机器学习
       link: /machine-learning/
+    - theme: alt
+      text: ⭐ GitHub Star
+      link: https://github.com/frank-1150/learning-ai-technical
 
 features:
   - icon: 🤖

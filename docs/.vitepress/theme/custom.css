@@ -23,6 +23,23 @@
   margin-bottom: 1.5rem;
 }
 
+.star-cta {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--vp-c-divider);
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+}
+
+.star-cta a {
+  color: var(--vp-c-text-2);
+  text-decoration: none;
+}
+
+.star-cta a:hover {
+  color: var(--vp-c-text-1);
+}
+
 .vp-doc div[class*='language-'] {
   border-radius: 8px;
 }
