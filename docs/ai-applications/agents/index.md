@@ -1,21 +1,13 @@
 ---
-title: AI 智能体
-description: AI 智能体的架构设计、工具调用与多智能体协作
-tags: [agents, llm, tools]
+title: 智能体的原理和操控
+description: AI 智能体的核心执行机制、工具调用循环，以及如何在运行时引导和控制智能体
+tags: [agents, llm, tools, agent-loop]
 ---
 
-# AI 智能体
+# 智能体的原理和操控
 
-AI 智能体 (Agents) 是能够自主规划、决策并执行任务的 AI 系统。
+AI 智能体不是"一次性 LLM 调用"，而是由宿主代码精确控制的循环系统。理解这个循环，是构建和调试任何 Agent 应用的基础。
 
-## 核心概念
+## 文章
 
-*待补充*
-
-## 架构模式
-
-*待补充*
-
-## 工具调用
-
-*待补充*
+- [智能体的核心：两个循环](./agent-loop) — 从真实开源代码剖析驱动智能体的两个嵌套循环，以及 Steering / Follow-up Messages 的操控机制

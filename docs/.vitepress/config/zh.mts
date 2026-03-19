@@ -47,9 +47,8 @@ function nav(): DefaultTheme.NavItem[] {
     {
       text: 'AI 应用',
       items: [
-        { text: 'RAG', link: '/ai-applications/rag/' },
-        { text: '智能体', link: '/ai-applications/agents/' },
-        { text: '提示工程', link: '/ai-applications/prompt-engineering/' }
+        { text: '智能体的原理和操控', link: '/ai-applications/agents/' },
+        { text: '我如何使用 AI？', link: '/ai-applications/how-i-use-ai/' }
       ]
     },
     {
@@ -70,24 +69,18 @@ function sidebar(): DefaultTheme.Sidebar {
         items: [
           { text: '概览', link: '/ai-applications/' },
           {
-            text: 'RAG (检索增强生成)',
+            text: '智能体的原理和操控',
             collapsed: false,
             items: [
-              { text: '介绍', link: '/ai-applications/rag/' }
+              { text: '介绍', link: '/ai-applications/agents/' },
+              { text: '智能体的核心：两个循环', link: '/ai-applications/agents/agent-loop' }
             ]
           },
           {
-            text: '智能体 (Agents)',
+            text: '我如何使用 AI？',
             collapsed: false,
             items: [
-              { text: '介绍', link: '/ai-applications/agents/' }
-            ]
-          },
-          {
-            text: '提示工程',
-            collapsed: true,
-            items: [
-              { text: '介绍', link: '/ai-applications/prompt-engineering/' }
+              { text: '介绍', link: '/ai-applications/how-i-use-ai/' }
             ]
           }
         ]

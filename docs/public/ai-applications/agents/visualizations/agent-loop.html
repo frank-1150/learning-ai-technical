@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  padding: 20px 16px 24px;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.2s, color 0.2s;
+}
+
+:root {
+  --bg: #ffffff;
+  --text: #111827;
+  --surface: #f9fafb;
+  --border: #e5e7eb;
+  --dim: #6b7280;
+  --code-bg: #f3f4f6;
+  --blue: #2563eb;
+  --blue-bg: #eff6ff;
+  --blue-border: #bfdbfe;
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --green-border: #bbf7d0;
+  --sys-bg: #fafafa;
+  --sys-border: #d1d5db;
+  --active-bg: #fffbeb;
+  --active-border: #f59e0b;
+  --active-glow: 0 0 0 2px rgba(245, 158, 11, 0.35);
+  --done-opacity: 0.65;
+  --connector: #d1d5db;
+}
+
+body.dark {
+  --bg: #0d1117;
+  --text: #e6edf3;
+  --surface: #161b22;
+  --border: #30363d;
+  --dim: #8b949e;
+  --code-bg: #21262d;
+  --blue: #60a5fa;
+  --blue-bg: #0c1a2e;
+  --blue-border: #1e40af;
+  --green: #4ade80;
+  --green-bg: #052e16;
+  --green-border: #166534;
+  --sys-bg: #0d1117;
+  --sys-border: #30363d;
+  --active-bg: #1c1200;
+  --active-border: #d97706;
+  --active-glow: 0 0 0 2px rgba(217, 119, 6, 0.45);
+  --done-opacity: 0.55;
+  --connector: #30363d;
+}
+
+.header {
+  margin-bottom: 16px;
+  text-align: center;
+}
+.header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.header p {
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 3px;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.legend-dot.outer { background: var(--blue); }
+.legend-dot.inner { background: var(--green); }
+.legend-dot.sys { background: var(--dim); }
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+/* Vertical connector line */
+.steps::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  background: var(--connector);
+  z-index: 0;
+}
+
+.step {
+  position: relative;
+  padding: 11px 12px 11px 50px;
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  background: var(--surface);
+  opacity: var(--done-opacity);
+  transition: opacity 0.2s, border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.step.active {
+  opacity: 1;
+  border-color: var(--active-border);
+  background: var(--active-bg);
+  box-shadow: var(--active-glow);
+}
+.step.todo {
+  opacity: 0.38;
+}
+
+/* Circle number */
+.step-num {
+  position: absolute;
+  left: 8px;
+  top: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  z-index: 1;
+  transition: background 0.2s, color 0.2s;
+}
+.step.active .step-num {
+  background: var(--active-border);
+  color: #fff;
+}
+
+.step-loop {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-bottom: 5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.step-loop.outer {
+  background: var(--blue-bg);
+  color: var(--blue);
+  border: 1px solid var(--blue-border);
+}
+.step-loop.inner {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+}
+.step-loop.sys {
+  background: var(--sys-bg);
+  color: var(--dim);
+  border: 1px solid var(--sys-border);
+}
+
+.step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.step-body {
+  display: none;
+  margin-top: 8px;
+}
+.step.active .step-body {
+  display: block;
+}
+
+.step-desc {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.step-code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 11px;
+  background: var(--code-bg);
+  color: var(--blue);
+  padding: 8px 10px;
+  border-radius: 5px;
+  margin-top: 8px;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+body.dark .step-code { color: #93c5fd; }
+
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.btn {
+  padding: 7px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: all 0.15s;
+}
+.btn:hover:not(:disabled) { background: var(--border); }
+.btn.primary {
+  background: var(--blue);
+  color: #fff;
+  border-color: transparent;
+}
+.btn.primary:hover:not(:disabled) { opacity: 0.88; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.counter {
+  font-size: 12px;
+  color: var(--dim);
+  min-width: 50px;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h2>Agent Loop 执行流程</h2>
+  <p>两个嵌套循环如何驱动智能体持续执行</p>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot outer"></div>外层循环（Follow-up）</div>
+  <div class="legend-item"><div class="legend-dot inner"></div>内层循环（工具调用）</div>
+  <div class="legend-item"><div class="legend-dot sys"></div>系统边界</div>
+</div>
+
+<div class="steps" id="steps"></div>
+
+<div class="controls">
+  <button class="btn" id="btn-prev" disabled>◀ 上一步</button>
+  <span class="counter" id="counter"></span>
+  <button class="btn primary" id="btn-next">下一步 ▶</button>
+</div>
+
+<script>
+const STEPS = [
+  {
+    loop: 'sys',
+    loopLabel: '系统入口',
+    title: '收到用户消息',
+    desc: 'agentLoop() 被调用，Prompt 加入上下文，发出 agent_start 和 turn_start 事件。准备进入主循环。',
+    code: 'agentLoop(prompts, context, config)\n\nawait emit({ type: "agent_start" })\nawait emit({ type: "turn_start" })'
+  },
+  {
+    loop: 'outer',
+    loopLabel: '外层循环',
+    title: 'while (true) — 外层循环开始',
+    desc: '外层循环永远运行，只有在"没有 Follow-up Messages"时才通过 break 退出。\n它的存在让 Agent 在完成一个任务后，还能被追加新任务继续工作。',
+    code: '// 外层循环：等待并处理 Follow-up Messages\nwhile (true) {\n  let hasMoreToolCalls = true;\n  let pendingMessages =\n    (await config.getSteeringMessages?.()) || [];\n  // → 进入内层循环\n}'
+  },
+  {
+    loop: 'inner',
+    loopLabel: '内层循环',
+    title: '注入 Steering Messages',
+    desc: 'Steering Messages 是用户在 Agent 运行期间注入的"引导消息"（如"等等，换个方向"）。\n每次内层循环迭代开始时，先把这些消息插入上下文。\n这是从外部"操控"智能体最直接的入口。',
+    code: 'while (hasMoreToolCalls || pendingMessages.length > 0) {\n  if (pendingMessages.length > 0) {\n    for (const msg of pendingMessages) {\n      currentContext.messages.push(msg);\n      newMessages.push(msg);\n    }\n    pendingMessages = [];\n  }\n  // ...\n}'
+  },
+  {
+    loop: 'inner',
+    loopLabel: '内层循环',
+    title: 'LLM 生成回复（流式）',
+    desc: '调用 LLM 并流式接收回复。\n关键边界：AgentMessage[] 在这里才被转换为 LLM Message[]，这是整个系统中唯一的格式转换点。\n流式事件（message_start / message_update / message_end）实时发出，驱动 UI 更新。',
+    code: '// 唯一的 AgentMessage → LLM Message 转换边界\nconst llmMessages = await config.convertToLlm(messages);\n\nconst message = await streamAssistantResponse(\n  currentContext, config, signal, emit\n);'
+  },
+  {
+    loop: 'inner',
+    loopLabel: '内层循环',
+    title: '检查工具调用',
+    desc: '从 LLM 回复中过滤 toolCall 类型的 content。\n结果决定内层循环是否继续：\n• 有工具调用 → hasMoreToolCalls = true → 继续\n• 无工具调用 → hasMoreToolCalls = false → 准备退出内层循环',
+    code: 'const toolCalls = message.content.filter(\n  (c) => c.type === "toolCall"\n);\nhasMoreToolCalls = toolCalls.length > 0;'
+  },
+  {
+    loop: 'inner',
+    loopLabel: '内层循环',
+    title: '执行工具（完整生命周期）',
+    desc: '每个工具调用经历完整生命周期：\n① validateToolArguments — 参数校验\n② beforeToolCall hook — 可以拦截并阻止执行\n③ tool.execute — 串行（sequential）或并行（parallel）\n④ afterToolCall hook — 可以修改返回结果\n执行期间持续发出 tool_execution_update 事件，支持实时进度反馈。',
+    code: '// beforeToolCall 可以直接阻止执行\nif (config.beforeToolCall) {\n  const r = await config.beforeToolCall({...}, signal);\n  if (r?.block) return errorResult(r.reason);\n}\n\n// 串行 or 并行执行\nif (config.toolExecution === "sequential") {\n  return executeToolCallsSequential(...);\n}\nreturn executeToolCallsParallel(...);'
+  },
+  {
+    loop: 'inner',
+    loopLabel: '内层循环',
+    title: '工具结果 → 加入上下文 → 继续',
+    desc: '工具执行结果作为 ToolResultMessage 加入上下文。\n内层循环回到顶部，LLM 看到工具结果后决定下一步：\n• 继续调用更多工具 → 再次执行步骤 4–6\n• 给出最终文字回复 → hasMoreToolCalls = false',
+    code: 'for (const result of toolResults) {\n  currentContext.messages.push(result);\n  newMessages.push(result);\n}\n\n// 检查新的 Steering Messages 后回到循环顶\npendingMessages =\n  (await config.getSteeringMessages?.()) || [];'
+  },
+  {
+    loop: 'outer',
+    loopLabel: '外层循环',
+    title: '内层循环退出：检查 Follow-up Messages',
+    desc: 'Agent 完成了当前任务（无工具调用 + 无 Steering Messages）。\n外层循环在这里检查是否有 Follow-up Messages（Agent 完成后用户追加的新请求）。\n• 有 Follow-up → 设为 pendingMessages，continue 重入内层循环\n• 无 → break 退出外层循环',
+    code: 'const followUpMessages =\n  (await config.getFollowUpMessages?.()) || [];\n\nif (followUpMessages.length > 0) {\n  // 重新进入外层循环（内层循环也会重新开始）\n  pendingMessages = followUpMessages;\n  continue;\n}\n\n// 没有更多消息，退出\nbreak;'
+  },
+  {
+    loop: 'sys',
+    loopLabel: '系统出口',
+    title: 'Agent 结束：agent_end',
+    desc: '外层循环退出，发出 agent_end 事件，返回本次运行产生的所有新消息（包含 Prompt、Assistant 回复、所有工具结果）。EventStream 关闭，调用方可以通过 stream.end() 获取最终消息列表。',
+    code: 'await emit({\n  type: "agent_end",\n  messages: newMessages\n});\n\nreturn newMessages; // agentLoop() 返回'
+  }
+];
+
+let current = 0;
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function render() {
+  const container = document.getElementById('steps');
+  container.innerHTML = STEPS.map((s, i) => {
+    let cls = 'step';
+    if (i === current) cls += ' active';
+    else if (i > current) cls += ' todo';
+
+    return `
+      <div class="${cls}" onclick="goTo(${i})">
+        <div class="step-num">${i + 1}</div>
+        <div class="step-loop ${s.loop}">${s.loopLabel}</div>
+        <div class="step-title">${s.title}</div>
+        <div class="step-body">
+          <div class="step-desc">${esc(s.desc)}</div>
+          <div class="step-code">${esc(s.code)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('counter').textContent = `${current + 1} / ${STEPS.length}`;
+  document.getElementById('btn-prev').disabled = current === 0;
+  document.getElementById('btn-next').disabled = current === STEPS.length - 1;
+
+  const activeEl = container.children[current];
+  if (activeEl) {
+    activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function goTo(i) {
+  current = i;
+  render();
+}
+
+document.getElementById('btn-prev').onclick = () => { if (current > 0) { current--; render(); } };
+document.getElementById('btn-next').onclick = () => { if (current < STEPS.length - 1) { current++; render(); } };
+
+function syncTheme() {
+  try {
+    const isDark = window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('dark', isDark);
+  } catch(e) {}
+  render();
+}
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

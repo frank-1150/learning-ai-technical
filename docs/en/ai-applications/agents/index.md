@@ -1,21 +1,13 @@
 ---
-title: AI Agents
-description: AI agent architecture, tool use, and multi-agent collaboration
-tags: [agents, llm, tools]
+title: Agent Principles & Control
+description: Core execution mechanics of AI agents, tool-call loops, and how to guide and control agents at runtime
+tags: [agents, llm, tools, agent-loop]
 ---
 
-# AI Agents
+# Agent Principles & Control
 
-AI Agents are systems capable of autonomous planning, decision-making, and task execution.
+AI agents are not one-shot LLM calls — they are loop-based systems precisely controlled by host code. Understanding this loop is the foundation for building and debugging any agent application.
 
-## Core Concepts
+## Articles
 
-*To be added*
-
-## Architecture Patterns
-
-*To be added*
-
-## Tool Use
-
-*To be added*
+- [The Core of Agents: Two Loops](./agent-loop) — Analyzing the two nested loops that drive agents, plus Steering / Follow-up Messages for runtime control

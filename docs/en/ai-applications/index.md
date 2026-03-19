@@ -1,15 +1,14 @@
 ---
 title: AI Applications
-description: AI application technologies including RAG, Agents, and Prompt Engineering
+description: AI application technologies including agent mechanics, tool use, and personal AI workflows
 tags: [ai, applications]
 ---
 
 # AI Applications
 
-This section covers core AI application technologies.
+This section covers core AI application technologies and personal practice.
 
 ## Topics
 
-- [RAG (Retrieval-Augmented Generation)](./rag/) — Combining retrieval with generation
-- [Agents](./agents/) — AI agent design and implementation
-- [Prompt Engineering](./prompt-engineering/) — Best practices for prompt design
+- [Agent Principles & Control](./agents/) — Agent execution loops, tool use, and runtime control
+- [How I Use AI](./how-i-use-ai/) — Personal AI usage experience and workflows

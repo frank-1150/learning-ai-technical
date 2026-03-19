@@ -30,9 +30,8 @@ function nav(): DefaultTheme.NavItem[] {
     {
       text: 'AI Applications',
       items: [
-        { text: 'RAG', link: '/en/ai-applications/rag/' },
-        { text: 'Agents', link: '/en/ai-applications/agents/' },
-        { text: 'Prompt Engineering', link: '/en/ai-applications/prompt-engineering/' }
+        { text: 'Agent Principles & Control', link: '/en/ai-applications/agents/' },
+        { text: 'How I Use AI', link: '/en/ai-applications/how-i-use-ai/' }
       ]
     },
     {
@@ -54,24 +53,18 @@ function sidebar(): DefaultTheme.Sidebar {
         items: [
           { text: 'Overview', link: '/en/ai-applications/' },
           {
-            text: 'RAG (Retrieval-Augmented Generation)',
+            text: 'Agent Principles & Control',
             collapsed: false,
             items: [
-              { text: 'Introduction', link: '/en/ai-applications/rag/' }
+              { text: 'Introduction', link: '/en/ai-applications/agents/' },
+              { text: 'The Core of Agents: Two Loops', link: '/en/ai-applications/agents/agent-loop' }
             ]
           },
           {
-            text: 'Agents',
+            text: 'How I Use AI',
             collapsed: false,
             items: [
-              { text: 'Introduction', link: '/en/ai-applications/agents/' }
-            ]
-          },
-          {
-            text: 'Prompt Engineering',
-            collapsed: true,
-            items: [
-              { text: 'Introduction', link: '/en/ai-applications/prompt-engineering/' }
+              { text: 'Introduction', link: '/en/ai-applications/how-i-use-ai/' }
             ]
           }
         ]
