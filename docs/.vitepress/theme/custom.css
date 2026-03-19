@@ -16,6 +16,13 @@
   --vp-c-brand-3: #4a7aef;
 }
 
+.article-date {
+  display: block;
+  font-size: 14px;
+  color: var(--vp-c-text-2);
+  margin-bottom: 1.5rem;
+}
+
 .vp-doc div[class*='language-'] {
   border-radius: 8px;
 }

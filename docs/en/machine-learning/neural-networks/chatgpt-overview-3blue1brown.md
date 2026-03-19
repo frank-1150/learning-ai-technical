@@ -1,4 +1,5 @@
 ---
+date: 2026-03-18
 title: ChatGPT Overview (3Blue1Brown)
 description: GPT/Transformer parameter breakdown notes based on the 3Blue1Brown video series
 tags: [neural-networks, transformer, gpt, attention, 3blue1brown]

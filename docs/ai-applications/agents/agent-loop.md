@@ -1,4 +1,5 @@
 ---
+date: 2026-03-19
 title: 智能体的核心：两个循环
 description: 从真实开源代码剖析驱动 AI 智能体的两个嵌套循环，以及如何通过 Steering / Follow-up Messages 在运行时操控智能体
 tags: [agents, agent-loop, tool-use, steering, llm]

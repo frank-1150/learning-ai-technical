@@ -1,4 +1,5 @@
 ---
+date: 2026-03-18
 title: "NVIDIA Vera Rubin + LPX: Why Move FFN to LPU?"
 description: Deep dive into the design rationale behind NVIDIA Vera Rubin's GPU + LPX collaborative inference, from Roofline Model to Memory-Bound analysis
 tags: [nvidia, inference, hardware, roofline-model, memory-bound, vera-rubin]

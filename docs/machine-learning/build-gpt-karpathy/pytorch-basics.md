@@ -1,4 +1,5 @@
 ---
+date: 2026-03-16
 title: PyTorch 基础操作（GPT 实现中的使用）
 description: Let's Build GPT 视频中用到的所有 PyTorch API 详解，含示例与可视化
 tags: [pytorch, tensors, nn.embedding, softmax, attention, masked-fill, torch.tril]

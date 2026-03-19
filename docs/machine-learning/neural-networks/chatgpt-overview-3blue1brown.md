@@ -1,4 +1,5 @@
 ---
+date: 2026-03-15
 title: ChatGPT 概览 (3Blue1Brown)
 description: 基于 3Blue1Brown 系列视频的 GPT/Transformer 参数结构笔记
 tags: [neural-networks, transformer, gpt, attention, 3blue1brown]

@@ -1,4 +1,5 @@
 ---
+date: 2026-03-18
 title: "NVIDIA Vera Rubin + LPX: 为什么 FFN 要搬到 LPU 上？"
 description: 深入理解 NVIDIA Vera Rubin 架构中 GPU + LPX 协同推理的设计原理，从 Roofline Model 到 Memory-Bound 分析
 tags: [nvidia, inference, hardware, roofline-model, memory-bound, vera-rubin]

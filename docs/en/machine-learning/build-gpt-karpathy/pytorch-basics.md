@@ -1,4 +1,5 @@
 ---
+date: 2026-03-18
 title: PyTorch Basics (Used in GPT Implementation)
 description: All PyTorch APIs used in the Let's Build GPT video, with examples and visualizations
 tags: [pytorch, tensors, nn.embedding, softmax, attention, masked-fill, torch.tril]
