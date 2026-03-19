@@ -10,7 +10,16 @@ const isZh = computed(() => lang.value.startsWith('zh'))
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
-  const [year, month, day] = String(dateStr).split('-').map(Number)
+  // YAML parses bare dates (2026-01-01) as Date objects at midnight UTC,
+  // not strings — extract UTC parts to avoid String(Date) mangling.
+  let year, month, day
+  if (dateStr instanceof Date) {
+    year = dateStr.getUTCFullYear()
+    month = dateStr.getUTCMonth() + 1
+    day = dateStr.getUTCDate()
+  } else {
+    ;[year, month, day] = String(dateStr).split('-').map(Number)
+  }
   const d = new Date(year, month - 1, day)
   return d.toLocaleDateString(isZh.value ? 'zh-CN' : 'en-US', {
     year: 'numeric',
