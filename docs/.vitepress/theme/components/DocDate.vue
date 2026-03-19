@@ -10,16 +10,10 @@ const isZh = computed(() => lang.value.startsWith('zh'))
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
-  // YAML parses bare dates (2026-01-01) as Date objects at midnight UTC,
-  // not strings — extract UTC parts to avoid String(Date) mangling.
-  let year, month, day
-  if (dateStr instanceof Date) {
-    year = dateStr.getUTCFullYear()
-    month = dateStr.getUTCMonth() + 1
-    day = dateStr.getUTCDate()
-  } else {
-    ;[year, month, day] = String(dateStr).split('-').map(Number)
-  }
+  // YAML bare dates are serialized by VitePress via JSON as ISO strings
+  // ("2026-03-19T00:00:00.000Z"). Slicing to 10 chars gives "YYYY-MM-DD"
+  // regardless of whether the original value was a string or a Date object.
+  const [year, month, day] = String(dateStr).slice(0, 10).split('-').map(Number)
   const d = new Date(year, month - 1, day)
   return d.toLocaleDateString(isZh.value ? 'zh-CN' : 'en-US', {
     year: 'numeric',
