@@ -76,7 +76,8 @@
 <script>
 function getLang() {
   try {
-    return window.parent.document.documentElement.lang || 'zh';
+    const lang = window.parent.document.documentElement.lang || 'zh';
+    return lang.startsWith('zh') ? 'zh' : 'en';
   } catch(e) { return 'zh'; }
 }
 
