@@ -80,7 +80,8 @@ function sidebar(): DefaultTheme.Sidebar {
             text: '我如何使用 AI？',
             collapsed: false,
             items: [
-              { text: '介绍', link: '/ai-applications/how-i-use-ai/' }
+              { text: '介绍', link: '/ai-applications/how-i-use-ai/' },
+              { text: 'Agent 时代真正的需求，可能是"更会执行"', link: '/ai-applications/how-i-use-ai/围绕定时调度 agent 的几个想法' }
             ]
           }
         ]
