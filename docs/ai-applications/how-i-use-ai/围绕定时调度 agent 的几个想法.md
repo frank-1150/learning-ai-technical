@@ -1,5 +1,8 @@
 ---
 date: 2026-03-19
+title: "Agent 时代真正的需求，可能是「更会执行」"
+description: 从定时任务出发，探讨 Agent 平台、动态路由与执行市场的价值链——AI 时代真正的竞争力可能不是「更会思考」，而是「更会执行」
+tags: [agent, scheduling, workflow, execution, ai-applications]
 ---
 
 # Agent 时代真正的需求，可能是”更会执行”
