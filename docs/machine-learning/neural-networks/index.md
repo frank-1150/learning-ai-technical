@@ -8,14 +8,6 @@ tags: [neural-networks, deep-learning, backpropagation]
 
 神经网络是深度学习的核心，从感知机到 Transformer，理解其演化和原理至关重要。
 
-## 基础架构
+## 文章
 
-*待补充*
-
-## 反向传播
-
-*待补充*
-
-## 常见架构
-
-*待补充*
+- [ChatGPT 概览 (3Blue1Brown)](./chatgpt-overview-3blue1brown) — 基于 3Blue1Brown 系列视频的 GPT/Transformer 参数结构笔记

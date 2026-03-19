@@ -74,6 +74,45 @@
 </div>
 
 <script>
+function getLang() {
+  try {
+    return window.parent.document.documentElement.lang || 'zh';
+  } catch(e) { return 'zh'; }
+}
+
+const T = {
+  zh: {
+    prefill: 'Prefill（预填充）',
+    decode: 'Decode（逐 Token 生成）',
+    input: 'Input',
+    weight: 'Weight (FFN)',
+    output: 'Output',
+    weightTransfer: '权重搬运',
+    compute: '计算量',
+    ai: 'Arithmetic Intensity',
+    gpuUtil: 'GPU 利用率',
+    high: '高',
+    low: '< 1%',
+    prefillInsight: '1024 个 token 共享同一份权重 → 搬一次数据做 1024 倍计算 → GPU 算力被充分利用（Compute-Bound）',
+    decodeInsight: '只有 1 个 token，但仍要加载全部 256 MB 权重 → 搬运时间远大于计算时间 → GPU 99% 算力在空转（Memory-Bound）',
+  },
+  en: {
+    prefill: 'Prefill',
+    decode: 'Decode',
+    input: 'Input',
+    weight: 'Weight (FFN)',
+    output: 'Output',
+    weightTransfer: 'Weight Transfer',
+    compute: 'Compute',
+    ai: 'Arithmetic Intensity',
+    gpuUtil: 'GPU Utilization',
+    high: 'High',
+    low: '< 1%',
+    prefillInsight: '1024 tokens share one weight matrix → load once, compute 1024x → GPU fully utilized (Compute-Bound)',
+    decodeInsight: 'Only 1 token, but all 256 MB weights must be loaded → data transfer dominates → GPU 99% idle (Memory-Bound)',
+  }
+};
+
 function getColor(varName) {
   return getComputedStyle(document.body).getPropertyValue(varName).trim();
 }
@@ -145,6 +184,7 @@ function render() {
   const dimColor = getColor('--dim');
   const mutedColor = getColor('--muted');
 
+  const t = (key) => T[getLang()][key];
   const isPrefill = currentPhase === 'prefill';
   const inputColor = isPrefill ? getColor('--matrix-input-prefill') : getColor('--matrix-input-decode');
   const weightColor = getColor('--matrix-weight');
@@ -191,9 +231,9 @@ function render() {
 
   // Names above
   const nameY = Math.min(inputY, weightY) - 16;
-  drawText(svg, inputX + colsA/2, nameY, 'Input', inputColor, 12);
-  drawText(svg, weightX + colsB/2, nameY, 'Weight (FFN)', weightColor, 12);
-  drawText(svg, outputX + colsB/2, nameY, 'Output', outputColor, 12);
+  drawText(svg, inputX + colsA/2, nameY, t('input'), inputColor, 12);
+  drawText(svg, weightX + colsB/2, nameY, t('weight'), weightColor, 12);
+  drawText(svg, outputX + colsB/2, nameY, t('output'), outputColor, 12);
 
   // Dimension labels
   // Input width
@@ -226,25 +266,25 @@ function render() {
   const stats = document.getElementById('stats-panel');
   if (isPrefill) {
     stats.innerHTML = `
-      <div class="stat-card"><div class="stat-label">权重搬运</div><div class="stat-value blue">256 MB</div></div>
-      <div class="stat-card"><div class="stat-label">计算量</div><div class="stat-value yellow">274 GFLOPs</div></div>
-      <div class="stat-card"><div class="stat-label">Arithmetic Intensity</div><div class="stat-value green">~1075</div></div>
-      <div class="stat-card"><div class="stat-label">GPU 利用率</div><div class="stat-value green">高</div></div>`;
+      <div class="stat-card"><div class="stat-label">${t('weightTransfer')}</div><div class="stat-value blue">256 MB</div></div>
+      <div class="stat-card"><div class="stat-label">${t('compute')}</div><div class="stat-value yellow">274 GFLOPs</div></div>
+      <div class="stat-card"><div class="stat-label">${t('ai')}</div><div class="stat-value green">~1075</div></div>
+      <div class="stat-card"><div class="stat-label">${t('gpuUtil')}</div><div class="stat-value green">${t('high')}</div></div>`;
   } else {
     stats.innerHTML = `
-      <div class="stat-card"><div class="stat-label">权重搬运</div><div class="stat-value blue">256 MB</div></div>
-      <div class="stat-card"><div class="stat-label">计算量</div><div class="stat-value yellow">268 MFLOPs</div></div>
-      <div class="stat-card"><div class="stat-label">Arithmetic Intensity</div><div class="stat-value red">~1</div></div>
-      <div class="stat-card"><div class="stat-label">GPU 利用率</div><div class="stat-value red">< 1%</div></div>`;
+      <div class="stat-card"><div class="stat-label">${t('weightTransfer')}</div><div class="stat-value blue">256 MB</div></div>
+      <div class="stat-card"><div class="stat-label">${t('compute')}</div><div class="stat-value yellow">268 MFLOPs</div></div>
+      <div class="stat-card"><div class="stat-label">${t('ai')}</div><div class="stat-value red">~1</div></div>
+      <div class="stat-card"><div class="stat-label">${t('gpuUtil')}</div><div class="stat-value red">${t('low')}</div></div>`;
   }
 
   const insight = document.getElementById('insight-box');
   if (isPrefill) {
     insight.className = 'insight-box insight-prefill';
-    insight.textContent = '1024 个 token 共享同一份权重 → 搬一次数据做 1024 倍计算 → GPU 算力被充分利用（Compute-Bound）';
+    insight.textContent = t('prefillInsight');
   } else {
     insight.className = 'insight-box insight-decode';
-    insight.textContent = '只有 1 个 token，但仍要加载全部 256 MB 权重 → 搬运时间远大于计算时间 → GPU 99% 算力在空转（Memory-Bound）';
+    insight.textContent = t('decodeInsight');
   }
 }
 
