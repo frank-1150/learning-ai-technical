@@ -83,6 +83,37 @@ function sidebar(): DefaultTheme.Sidebar {
               { text: '介绍', link: '/ai-applications/how-i-use-ai/' },
               { text: 'Agent 时代真正的需求，可能是"更会执行"', link: '/ai-applications/how-i-use-ai/围绕定时调度 agent 的几个想法' }
             ]
+          },
+          {
+            text: 'AI 行业观点',
+            collapsed: false,
+            items: [
+              { text: '概览', link: '/ai-applications/industry-views/' },
+              {
+                text: '行业共识',
+                collapsed: true,
+                items: [
+                  { text: '列表', link: '/ai-applications/industry-views/consensus/' },
+                  { text: '2026-03', link: '/ai-applications/industry-views/consensus/2026-03' }
+                ]
+              },
+              {
+                text: '行业人士观点',
+                collapsed: true,
+                items: [
+                  { text: '列表', link: '/ai-applications/industry-views/perspectives/' },
+                  { text: '2026-03', link: '/ai-applications/industry-views/perspectives/2026-03' }
+                ]
+              },
+              {
+                text: '事实收集',
+                collapsed: true,
+                items: [
+                  { text: '列表', link: '/ai-applications/industry-views/facts/' },
+                  { text: '2026-03', link: '/ai-applications/industry-views/facts/2026-03' }
+                ]
+              }
+            ]
           }
         ]
       }

@@ -66,6 +66,13 @@ function sidebar(): DefaultTheme.Sidebar {
             items: [
               { text: 'Introduction', link: '/en/ai-applications/how-i-use-ai/' }
             ]
+          },
+          {
+            text: 'AI Industry Views',
+            collapsed: false,
+            items: [
+              { text: 'Overview', link: '/en/ai-applications/industry-views/' }
+            ]
           }
         ]
       }
