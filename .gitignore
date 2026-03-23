@@ -20,3 +20,6 @@ Thumbs.db
 # Editor
 *.swp
 *.swo
+
+# Private content - scripts, tokens, downloaded files (never publish)
+private/
