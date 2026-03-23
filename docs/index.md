@@ -2,9 +2,9 @@
 layout: home
 
 hero:
-  name: "AI Learning Notes"
-  text: "Technical depth,\npractical perspective"
-  tagline: Agent mechanics, industry intelligence, neural networks — written by a practitioner, not a textbook.
+  name: "AI Technical Notes"
+  text: "From how agents run\nto where the industry is headed"
+  tagline: A practitioner's public notebook — technical deep-dives, curated industry intelligence, and original thinking on the AI era. Built to share what I'm learning and how I think.
   actions:
     - theme: brand
       text: Start Reading
@@ -15,19 +15,19 @@ hero:
 
 features:
   - icon: 🔁
-    title: Agent Mechanics
-    details: How two nested loops drive every AI agent. Real open-source code, interactive step-by-step visualization.
+    title: Agent Loop — How AI Agents Actually Run
+    details: A step-by-step breakdown of the two nested loops (tool-call loop + follow-up loop) that drive every AI agent, based on real open-source code. Includes an interactive visualization you can walk through yourself.
     link: /ai-applications/agents/agent-loop
   - icon: 📡
-    title: AI Industry Intelligence
-    details: Monthly-curated consensus, executive perspectives (Altman, Amodei, Huang…), and hard data — with sources.
+    title: Industry Consensus, Perspectives & Facts
+    details: Monthly-curated AI industry intelligence in three layers — what the industry has broadly agreed on, what key figures like Sam Altman, Dario Amodei, and Jensen Huang are saying, and hard data points with sources and dates.
     link: /ai-applications/industry-views/
   - icon: 🧠
-    title: Machine Learning
-    details: Neural network fundamentals, PyTorch hands-on, transformer architecture, and inference hardware.
+    title: Machine Learning Fundamentals
+    details: How neural networks store knowledge, PyTorch tensor operations from scratch, Transformer architecture internals (based on the 3Blue1Brown series), and analysis of NVIDIA's inference hardware roadmap.
     link: /machine-learning/
   - icon: 💡
-    title: Personal AI Practice
-    details: How I use AI day-to-day, what tools I follow, and original thinking on where the agent era is headed.
+    title: How I Use AI — Tools, Sources & Original Thinking
+    details: The information sources I actually follow, plus an original essay arguing that the real competitive advantage in the agent era is not smarter models but better execution infrastructure.
     link: /ai-applications/how-i-use-ai/
 ---
