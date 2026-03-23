@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: "AI 技术学习笔记"
-  text: "AI 应用、硬件与算法原理\n以及我的学习之旅"
+  text: "应用、硬件与算法原理"
   tagline: 一个喜欢 AI 的软件工程师的公开笔记——从零建立对 AI 的系统理解。
   actions:
     - theme: brand

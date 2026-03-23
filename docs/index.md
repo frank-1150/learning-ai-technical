@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: "AI Learning Notes"
-  text: "AI applications, hardware & algorithms,\nand my learning journey"
+  text: "Applications, hardware & algorithms"
   tagline: Notes from a software engineer who loves AI — building understanding from the ground up.
   actions:
     - theme: brand
