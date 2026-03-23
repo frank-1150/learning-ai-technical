@@ -1,15 +1,15 @@
 ---
-title: 机器学习
-description: 机器学习核心概念与实践，包括 PyTorch、张量运算、神经网络
+title: Machine Learning
+description: Core ML concepts and practice including PyTorch, tensors, and neural networks
 tags: [machine-learning, deep-learning]
 ---
 
-# 机器学习
+# Machine Learning
 
-本章节涵盖机器学习的核心理论与工程实践。
+This section covers core machine learning theory and engineering practice.
 
-## 主题
+## Topics
 
-- [神经网络](./neural-networks/) — 神经网络原理与实现
-- [从零构建 GPT (Karpathy)](./build-gpt-karpathy/) — Andrej Karpathy 手把手从 Bigram 到完整 Transformer
-- [推理优化与硬件](./inference/nvidia-vera-rubin-lpx) — GPU/LPU 协同推理，Roofline Model
+- [Neural Networks](./neural-networks/) — Neural network principles and implementation
+- [Build GPT from Scratch (Karpathy)](./build-gpt-karpathy/) — Andrej Karpathy's walkthrough from Bigram to full Transformer
+- [Inference & Hardware](./inference/nvidia-vera-rubin-lpx) — GPU/LPU cooperative inference, Roofline Model

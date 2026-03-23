@@ -1,15 +1,15 @@
 ---
-title: AI 行业观点
-description: 收集和整理 AI 行业的共识、人士观点与事实，追踪行业认知的演变
+title: AI Industry Views
+description: Collecting and organizing AI industry consensus, professional perspectives, and facts
 tags: [ai, industry-views]
 ---
 
-# AI 行业观点
+# AI Industry Views
 
-本板块用于持续收集和整理 AI 行业的三类内容，追踪行业认知的形成与演变。
+This section collects and organizes three types of AI industry content, tracking the formation and evolution of industry understanding.
 
-## 三层结构
+## Structure
 
-- [行业共识](./consensus/) — 已被广泛认可的观点，带时间戳记录形成时间
-- [行业人士观点](./perspectives/) — 特定人士或机构的具体观点，可追溯来源
-- [事实收集](./facts/) — 零散事实的持续积累，达到一定程度可升级为行业共识
+- [**Industry Consensus**](./consensus/) — Widely accepted views with timestamps
+- [**Industry Perspectives**](./perspectives/) — Views from specific individuals or organizations, with traceable sources
+- [**Facts & Data**](./facts/) — Ongoing accumulation of discrete facts that can be elevated to consensus

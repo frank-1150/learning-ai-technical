@@ -1,0 +1,1 @@
+I highly recommend the [follow builders skill](https://github.com/zarazhangrui/follow-builders?tab=readme-ov-file) built by my friend Zara Zhang — install it in OpenClaw or any agent that supports skills (Claude, Codex).

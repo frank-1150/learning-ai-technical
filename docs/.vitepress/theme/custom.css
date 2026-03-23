@@ -40,6 +40,11 @@
   color: var(--vp-c-text-1);
 }
 
+/* Hide the default VitePress locale dropdown — replaced by LangSwitcher */
+.VPNavBarTranslations {
+  display: none !important;
+}
+
 .vp-doc div[class*='language-'] {
   border-radius: 8px;
 }

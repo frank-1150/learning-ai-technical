@@ -1,13 +1,13 @@
 ---
-title: 行业人士观点
-description: AI 行业人士和机构的具体观点，按月归档，可追溯来源
+title: Industry Perspectives
+description: Specific views from AI industry figures and institutions, archived by month with traceable sources
 tags: [industry-views, perspectives]
 ---
 
-# 行业人士观点
+# Industry Perspectives
 
-收录 AI 行业人士和机构的具体观点，标注来源与日期，便于追踪观点演变。
+Curating specific views from AI industry figures and institutions, with sources and dates to track how perspectives evolve.
 
-## 归档
+## Archive
 
 - [2026-03](./2026-03)

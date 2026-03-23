@@ -2,6 +2,7 @@
 import DefaultTheme from 'vitepress/theme'
 import { useData } from 'vitepress'
 import { computed } from 'vue'
+import LangSwitcher from './LangSwitcher.vue'
 
 const { Layout } = DefaultTheme
 const { frontmatter, lang } = useData()
@@ -25,6 +26,9 @@ function formatDate(dateStr) {
 
 <template>
   <Layout>
+    <template #nav-bar-content-after>
+      <LangSwitcher />
+    </template>
     <template #doc-before>
       <span v-if="frontmatter.date" class="article-date">
         {{ formatDate(frontmatter.date) }}

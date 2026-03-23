@@ -1,168 +1,168 @@
 ---
 date: 2026-03-18
-title: "NVIDIA Vera Rubin + LPX: 为什么 FFN 要搬到 LPU 上？"
-description: 深入理解 NVIDIA Vera Rubin 架构中 GPU + LPX 协同推理的设计原理，从 Roofline Model 到 Memory-Bound 分析
+title: "NVIDIA Vera Rubin + LPX: Why Move FFN to LPU?"
+description: Deep dive into the design rationale behind NVIDIA Vera Rubin's GPU + LPX collaborative inference, from Roofline Model to Memory-Bound analysis
 tags: [nvidia, inference, hardware, roofline-model, memory-bound, vera-rubin]
 ---
 
-# NVIDIA Vera Rubin + LPX：GPU 与 LPU 协同推理
+# NVIDIA Vera Rubin + LPX: GPU and LPU Collaborative Inference
 
-> 2025 年 NVIDIA 发布了 Vera Rubin 架构，其中一个关键创新是引入了 **LPX（Linear Processor Accelerator）**。推理时 **Attention 在 GPU 上计算，FFN 在 LPU 上计算**。为什么要这样拆分？这背后涉及到 **Roofline Model**、**Arithmetic Intensity** 和 **Memory-Bound vs Compute-Bound** 的核心概念。
+> In 2025, NVIDIA released the Vera Rubin architecture, featuring a key innovation: the **LPX (Linear Processor Accelerator)**. During inference, **Attention is computed on GPU, while FFN is computed on LPU**. Why split it this way? This involves core concepts of **Roofline Model**, **Arithmetic Intensity**, and **Memory-Bound vs Compute-Bound**.
 
-## Transformer 推理的两个阶段
+## Two Phases of Transformer Inference
 
-LLM 的推理分为两个截然不同的阶段：
+LLM inference consists of two distinct phases:
 
-| | Prefill（预填充） | Decode（逐 Token 生成） |
+| | Prefill | Decode (Token-by-Token Generation) |
 |---|---|---|
-| **输入** | 整个 prompt（如 1024 tokens） | 上一步生成的 1 个 token |
-| **计算方式** | 大批量矩阵乘法 | 逐 token 的矩阵-向量乘法 |
-| **瓶颈** | 计算量（Compute-Bound） | 内存带宽（Memory-Bound） |
-| **GPU 利用率** | 高（大矩阵并行） | 极低（大量算力空转等数据） |
+| **Input** | Entire prompt (e.g., 1024 tokens) | 1 token from previous step |
+| **Compute Pattern** | Large batch matrix multiplication | Token-by-token matrix-vector multiplication |
+| **Bottleneck** | Compute (Compute-Bound) | Memory bandwidth (Memory-Bound) |
+| **GPU Utilization** | High (large matrix parallelism) | Extremely low (massive compute idle waiting for data) |
 
 <HtmlVisualization
-  src="/machine-learning/inference/visualizations/prefill-vs-decode.html"
+  src="/machine-learning/inference/visualizations/prefill-vs-decode-en.html"
   height="520px"
-  title="Prefill vs Decode：两个截然不同的阶段"
+  title="Prefill vs Decode: Two Distinct Phases"
 />
 
-::: info 关键区别
-**Prefill** 阶段处理整个 prompt，可以把所有 token 打包成一个大矩阵做 batch 矩阵乘法，GPU 的数千个核心可以满载运行。
+::: info Key Difference
+The **Prefill** phase processes the entire prompt, packing all tokens into a large matrix for batch matrix multiplication—GPU's thousands of cores can run at full capacity.
 
-**Decode** 阶段每次只生成一个 token，权重矩阵 $W$ 的大小不变（比如 $4096 \times 16384$），但输入从矩阵退化为一个向量（$1 \times 4096$），大量算力被浪费。
+In the **Decode** phase, only one token is generated at a time. The weight matrix $W$ size remains the same (e.g., $4096 \times 16384$), but the input degrades from a matrix to a vector ($1 \times 4096$), wasting massive compute power.
 :::
 
-## 什么是 Arithmetic Intensity？
+## What is Arithmetic Intensity?
 
-**Arithmetic Intensity（算术强度）** 是理解 GPU 利用率的核心指标：
+**Arithmetic Intensity** is the core metric for understanding GPU utilization:
 
 $$
-\text{Arithmetic Intensity} = \frac{\text{FLOPs（计算量）}}{\text{Bytes（数据搬运量）}}
+\text{Arithmetic Intensity} = \frac{\text{FLOPs (Compute)}}{\text{Bytes (Data Movement)}}
 $$
 
-它回答一个简单问题：**每搬运 1 字节数据，能做多少次计算？**
+It answers a simple question: **How many computations can be performed per byte of data moved?**
 
-### FFN 在 Decode 阶段的算术强度
+### FFN Arithmetic Intensity in Decode Phase
 
-以一个典型的 FFN 层为例（hidden_dim = 4096, intermediate_dim = 16384, FP16）：
+Take a typical FFN layer as example (hidden_dim = 4096, intermediate_dim = 16384, FP16):
 
-**权重大小：**
+**Weight size:**
 - $W_1$: $4096 \times 16384 \times 2 \text{ bytes} = 128 \text{ MB}$
 - $W_2$: $16384 \times 4096 \times 2 \text{ bytes} = 128 \text{ MB}$
-- 总计需从显存加载：**~256 MB**
+- Total loading from VRAM: **~256 MB**
 
-**计算量（Batch Size = 1）：**
+**Compute (Batch Size = 1):**
 - $W_1$: $4096 \times 16384 \times 2 = 134M \text{ FLOPs}$
 - $W_2$: $16384 \times 4096 \times 2 = 134M \text{ FLOPs}$
-- 总计：**~268M FLOPs**
+- Total: **~268M FLOPs**
 
 $$
 \text{AI} = \frac{268 \times 10^6 \text{ FLOPs}}{256 \times 10^6 \text{ Bytes}} \approx 1.05 \text{ FLOPs/Byte}
 $$
 
-::: warning 这意味着什么？
-Arithmetic Intensity ≈ 1 意味着每从显存搬 1 字节数据，只做 1 次浮点运算。GPU 的算力完全用不上——**搬数据的时间远远大于计算的时间**。
+::: warning What Does This Mean?
+Arithmetic Intensity ≈ 1 means for every byte of data moved from VRAM, only 1 floating-point operation is performed. GPU's compute power is completely unused—**data movement time far exceeds computation time**.
 
-对比 Prefill 阶段：如果 batch 有 1024 个 token，同样的 256 MB 权重可以做 $268M \times 1024 ≈ 274G$ 次计算，AI 达到 ~1075，GPU 的算力可以充分利用。
+Compare with Prefill phase: If batch has 1024 tokens, the same 256 MB of weights can perform $268M \times 1024 ≈ 274G$ computations, AI reaches ~1075, fully utilizing GPU's compute power.
 :::
 
-## Roofline Model：一张图看懂瓶颈
+## Roofline Model: Understanding Bottlenecks at a Glance
 
-**Roofline Model** 是分析硬件性能瓶颈的经典工具。它告诉我们：给定一个操作的 Arithmetic Intensity，实际性能受什么限制。
+**Roofline Model** is a classic tool for analyzing hardware performance bottlenecks. It tells us: given an operation's Arithmetic Intensity, what limits the actual performance?
 
 <HtmlVisualization
-  src="/machine-learning/inference/visualizations/roofline-model.html"
+  src="/machine-learning/inference/visualizations/roofline-model-en.html"
   height="560px"
-  title="Roofline Model：Memory-Bound vs Compute-Bound"
+  title="Roofline Model: Memory-Bound vs Compute-Bound"
 />
 
-### 如何判断一步操作是 Memory-Bound 还是 Compute-Bound？
+### How to Determine if an Operation is Memory-Bound or Compute-Bound?
 
-计算**临界点（Ridge Point）**：
+Calculate the **Ridge Point**:
 
 $$
 \text{Ridge Point} = \frac{\text{Peak Compute (FLOPs/s)}}{\text{Peak Memory Bandwidth (Bytes/s)}}
 $$
 
-以 **NVIDIA H100 SXM** 为例：
+Taking **NVIDIA H100 SXM** as example:
 - Peak FP16 Compute: **989 TFLOPS**
 - HBM3 Bandwidth: **3.35 TB/s**
 - Ridge Point = $989 / 3.35 ≈ 295 \text{ FLOPs/Byte}$
 
-| 操作 | Arithmetic Intensity | 与 Ridge Point 比较 | 瓶颈类型 |
+| Operation | Arithmetic Intensity | vs Ridge Point | Bottleneck Type |
 |---|---|---|---|
 | FFN Decode (BS=1) | ~1 FLOPs/Byte | 1 ≪ 295 | **Memory-Bound** |
 | FFN Prefill (BS=1024) | ~1075 FLOPs/Byte | 1075 > 295 | **Compute-Bound** |
-| Attention (Decode) | 变化大，通常较低 | 通常 < 295 | **Memory-Bound** |
+| Attention (Decode) | Variable, usually low | Usually < 295 | **Memory-Bound** |
 
-## GPU + LPX 协同架构
+## GPU + LPX Collaborative Architecture
 
-理解了 Memory-Bound 问题，就能理解 NVIDIA 的设计意图：
+Understanding the Memory-Bound problem reveals NVIDIA's design intent:
 
 <HtmlVisualization
-  src="/machine-learning/inference/visualizations/gpu-lpx-architecture.html"
+  src="/machine-learning/inference/visualizations/gpu-lpx-architecture-en.html"
   height="620px"
-  title="Vera Rubin GPU + LPX 协同推理架构"
+  title="Vera Rubin GPU + LPX Collaborative Inference Architecture"
 />
 
-### 为什么 FFN 放在 LPU 上更好？
+### Why is FFN Better on LPU?
 
-LPU（Linear Processing Unit）是专门为 **Memory-Bound 线性运算** 设计的：
+LPU (Linear Processing Unit) is designed specifically for **Memory-Bound linear operations**:
 
-| 特性 | GPU | LPU (LPX) |
+| Feature | GPU | LPU (LPX) |
 |---|---|---|
-| **设计目标** | 大规模并行计算 | 高带宽线性运算 |
-| **算力** | 极强（~1000 TFLOPS） | 适中 |
-| **内存带宽** | 高但不够用（~3 TB/s） | 极高（专为带宽优化） |
-| **适合场景** | Compute-Bound 操作 | Memory-Bound 操作 |
-| **AI = 1 时利用率** | < 1%（大量算力空转） | 高（算力匹配带宽） |
+| **Design Goal** | Large-scale parallel compute | High-bandwidth linear operations |
+| **Compute Power** | Extremely strong (~1000 TFLOPS) | Moderate |
+| **Memory Bandwidth** | High but insufficient (~3 TB/s) | Extremely high (bandwidth-optimized) |
+| **Suitable For** | Compute-Bound operations | Memory-Bound operations |
+| **Utilization at AI = 1** | < 1% (massive compute idle) | High (compute matches bandwidth) |
 
-::: info 核心洞察
-GPU 的算力/带宽比值（Ridge Point）太高——对于 AI ≈ 1 的操作，GPU 99% 的算力在空转等数据。
+::: info Core Insight
+GPU's compute/bandwidth ratio (Ridge Point) is too high—for operations with AI ≈ 1, GPU wastes 99% of compute power waiting for data.
 
-LPU 的设计思路是**降低 Ridge Point**：不堆算力，而是堆带宽，让算力和带宽的比值更匹配 FFN Decode 的实际需求。
+LPU's design philosophy is to **lower the Ridge Point**: not pile on compute, but pile on bandwidth, making the compute-to-bandwidth ratio match FFN Decode's actual needs.
 
-这就像用跑车（GPU）送快递 vs 用货车（LPU）送快递——跑车更快但一次只能装一件，货车虽慢但吞吐量大。当瓶颈是"搬东西"而不是"速度"时，货车更合适。
+This is like using a sports car (GPU) vs a truck (LPU) for delivery—the sports car is faster but can only carry one item at a time, the truck is slower but has high throughput. When the bottleneck is "moving things" not "speed," the truck is more suitable.
 :::
 
-### 数据搬运的开销
+### Data Movement Overhead
 
-每次 GPU 算完 Attention，确实需要把中间结果搬到 LPU 做 FFN，然后再搬回来。这引入了额外延迟，但：
+After GPU finishes Attention, it does need to move intermediate results to LPU for FFN, then move back. This adds extra latency, but:
 
-1. **搬运量小**：中间激活值只有一个向量（如 $1 \times 4096 \times 2 = 8 \text{ KB}$），而 FFN 权重是 256 MB
-2. **高速互联**：Vera Rubin 架构使用 NVLink 等高速总线连接 GPU 和 LPX
-3. **流水线并行**：第 $n$ 层的 FFN 计算可以和第 $n+1$ 层的 Attention 计算重叠
+1. **Small data volume**: Intermediate activations are just one vector (e.g., $1 \times 4096 \times 2 = 8 \text{ KB}$), while FFN weights are 256 MB
+2. **High-speed interconnect**: Vera Rubin architecture uses NVLink and other high-speed buses to connect GPU and LPX
+3. **Pipeline parallelism**: FFN computation of layer $n$ can overlap with Attention computation of layer $n+1$
 
 $$
-\text{搬运 overhead} = \frac{8 \text{ KB}}{数百 \text{ GB/s 带宽}} \approx \text{几十纳秒}
+\text{Movement overhead} = \frac{8 \text{ KB}}{\text{hundreds of GB/s bandwidth}} \approx \text{tens of nanoseconds}
 $$
 
-相比 FFN 在 GPU 上 Memory-Bound 导致的毫秒级延迟，搬运开销可以忽略不计。
+Compared to millisecond-level latency from FFN being Memory-Bound on GPU, movement overhead is negligible.
 
-## 判断 Memory-Bound vs Compute-Bound 的完整流程
+## Complete Process for Determining Memory-Bound vs Compute-Bound
 
 ```
-1. 计算该操作的 FLOPs（总浮点运算数）
-2. 计算该操作需要搬运的 Bytes（权重 + 输入 + 输出）
+1. Calculate FLOPs for the operation (total floating-point operations)
+2. Calculate Bytes to move (weights + input + output)
 3. Arithmetic Intensity = FLOPs / Bytes
-4. 查看硬件的 Ridge Point = Peak Compute / Peak Bandwidth
-5. 如果 AI < Ridge Point → Memory-Bound（瓶颈在搬数据）
-   如果 AI > Ridge Point → Compute-Bound（瓶颈在计算）
+4. Check hardware's Ridge Point = Peak Compute / Peak Bandwidth
+5. If AI < Ridge Point → Memory-Bound (bottleneck is data movement)
+   If AI > Ridge Point → Compute-Bound (bottleneck is computation)
 ```
 
-::: warning 实际工程中的考量
-- **Batch Size 越大，AI 越高**：Batch Size 从 1 增到 N，权重只读一次但计算 N 倍，AI 线性增长
-- **量化降低权重大小**：FP16 → INT8 → INT4 可以减少搬运量，提高 AI
-- **KV Cache** 是 Attention 阶段的额外 Memory-Bound 因素
-- 实际系统中 Prefill 和 Decode 可能混合调度（如 continuous batching）
+::: warning Considerations in Real Engineering
+- **Larger Batch Size = Higher AI**: Increasing Batch Size from 1 to N, weights are read once but computed N times, AI grows linearly
+- **Quantization reduces weight size**: FP16 → INT8 → INT4 reduces data movement, improving AI
+- **KV Cache** is an additional Memory-Bound factor in Attention phase
+- In real systems, Prefill and Decode may be mixed (e.g., continuous batching)
 :::
 
-## 总结
+## Summary
 
-| 问题 | 答案 |
+| Question | Answer |
 |---|---|
-| 为什么 FFN 放 LPU？ | Decode 阶段 FFN 是 Memory-Bound（AI ≈ 1），GPU 算力浪费 99%，LPU 的带宽/算力比更匹配 |
-| FFN 不也是矩阵计算吗？ | 是，但 Decode 时退化为矩阵×向量，计算量小而数据搬运量大 |
-| AI 为什么这么低？ | 每次只处理 1 个 token，256 MB 权重只做 268M 次计算 |
-| 搬运不花时间吗？ | 搬的是 8 KB 激活值，不是 256 MB 权重，高速互联下几十纳秒 |
-| 怎么判断 Memory/Compute Bound？ | 算 AI，比 Ridge Point。AI < Ridge Point 就是 Memory-Bound |
+| Why put FFN on LPU? | FFN in Decode phase is Memory-Bound (AI ≈ 1), GPU wastes 99% compute, LPU's bandwidth/compute ratio is better matched |
+| Isn't FFN also matrix computation? | Yes, but in Decode it degrades to matrix×vector, small compute volume but large data movement |
+| Why is AI so low? | Only 1 token processed at a time, 256 MB weights perform only 268M computations |
+| Doesn't movement take time? | Moving 8 KB activations, not 256 MB weights—tens of nanoseconds with high-speed interconnect |
+| How to determine Memory/Compute Bound? | Calculate AI, compare with Ridge Point. AI < Ridge Point = Memory-Bound |

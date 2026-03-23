@@ -1,42 +1,42 @@
 ---
 title: Let's Build GPT from Scratch (Karpathy)
-description: Andrej Karpathy 手把手从零构建 GPT，覆盖从 Bigram 到完整 Transformer 的完整路径
+description: Andrej Karpathy walks through building a GPT from scratch, covering the full path from Bigram to a complete Transformer
 tags: [gpt, transformer, karpathy, language-model, self-attention, pytorch]
 ---
 
 # Let's Build GPT from Scratch
 
-## 视频资源
+## Video Resources
 
-| 资源 | 链接 |
-|------|------|
-| 📺 YouTube 视频 | [Let's build GPT: from scratch, in code, spelled out](https://www.youtube.com/watch?v=kCc8FmEb1nY) |
+| Resource | Link |
+|----------|------|
+| 📺 YouTube | [Let's build GPT: from scratch, in code, spelled out](https://www.youtube.com/watch?v=kCc8FmEb1nY) |
 | 🧪 Google Colab | [colab.research.google.com](https://colab.research.google.com/drive/1JMLa53HDuA-i7ZBmqV7ZnA3c_fvtXnx-?usp=sharing) |
 | 💻 GitHub Repo | [karpathy/ng-video-lecture](https://github.com/karpathy/ng-video-lecture) |
 
 ---
 
-## 我们在构建什么
+## What We're Building
 
-- **任务**：字符级语言模型（character-level language model）
-- **训练数据**：Shakespeare 全集文本（~1MB）
-- **目标**：给定前面的字符，预测下一个字符
-- **最终规模**：约 **10M 参数**的 GPT 模型
+- **Task**: Character-level language model
+- **Training data**: Shakespeare's complete works (~1MB)
+- **Goal**: Given preceding characters, predict the next character
+- **Final scale**: ~**10M parameter** GPT model
 
-> Karpathy 的核心思想：**GPT 本质上就是 Transformer decoder**，从最简单的 Bigram 出发，一步步自然推导出整个架构。
+> Karpathy's core insight: **GPT is essentially a Transformer decoder**, built up step by step from the simplest Bigram model.
 
 ---
 
-## 构建路径总览
+## Build Path Overview
 
 ```
-字符 tokenization
+Character tokenization
       ↓
-Bigram 模型（基线）
+Bigram model (baseline)
       ↓
-数学 trick：平均历史上下文
+Math trick: averaging historical context
       ↓
-Self-Attention（单头）
+Self-Attention (single head)
       ↓
 Scaled Dot-Product Attention
       ↓
@@ -44,19 +44,19 @@ Multi-Head Attention
       ↓
 Feed-Forward Network
       ↓
-Transformer Block（残差 + LayerNorm + Dropout）
+Transformer Block (residual + LayerNorm + Dropout)
       ↓
-完整 GPT（6层堆叠）
+Complete GPT (6-layer stack)
 ```
 
 ---
 
-## Step 1：字符 Tokenization
+## Step 1: Character Tokenization
 
-Shakespeare 文本共有 **65 个不同字符**（包括大小写、标点）：
+Shakespeare's text contains **65 distinct characters** (including upper/lowercase, punctuation):
 
 ```python
-chars = sorted(list(set(text)))   # 所有唯一字符
+chars = sorted(list(set(text)))   # all unique characters
 vocab_size = len(chars)           # 65
 
 stoi = { ch:i for i,ch in enumerate(chars) }  # char → int
@@ -66,13 +66,13 @@ encode = lambda s: [stoi[c] for c in s]
 decode = lambda l: ''.join([itos[i] for i in l])
 ```
 
-与 GPT-2/3 使用 **BPE** tokenizer（~50k tokens）不同，这里用最简单的字符级编码。
+Unlike GPT-2/3 which use a **BPE** tokenizer (~50k tokens), this uses the simplest character-level encoding.
 
 ---
 
-## Step 2：Bigram 基线模型
+## Step 2: Bigram Baseline Model
 
-最简单的语言模型：只看**当前一个字符**预测下一个：
+The simplest language model: predict the next character using only the **current character**:
 
 ```python
 class BigramLanguageModel(nn.Module):
@@ -87,48 +87,48 @@ class BigramLanguageModel(nn.Module):
     def generate(self, idx, max_new_tokens):
         for _ in range(max_new_tokens):
             logits, _ = self(idx)
-            logits = logits[:, -1, :]              # 只取最后一个时间步
+            logits = logits[:, -1, :]              # take last timestep only
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
 ```
 
-**问题**：Bigram 完全没有利用历史上下文！位置 `t` 的预测与 `t-2, t-3, ...` 无关。
+**Problem**: Bigram completely ignores historical context! Prediction at position `t` has no dependence on `t-2, t-3, ...`.
 
 ---
 
-## Step 3：数学 Trick —— 加权平均历史
+## Step 3: Math Trick — Weighted Average of History
 
-**目标**：让每个 token 能"看到"它之前的所有 token。
+**Goal**: Let each token "see" all previous tokens.
 
-**最简单实现**：对过去所有 token 求平均（bag of words）：
+**Simplest implementation**: average all past tokens (bag of words):
 
 ```python
-# 低效版（循环）
+# Naive version (loops)
 for b in range(B):
     for t in range(T):
         xprev = x[b, :t+1]          # (t+1, C)
-        xbow[b, t] = xprev.mean(0)  # 均值
+        xbow[b, t] = xprev.mean(0)  # mean
 ```
 
-**矩阵乘法版本**：
+**Matrix multiplication version**:
 
 ```python
-wei = torch.tril(torch.ones(T, T))   # 下三角矩阵（掩码）
-wei = wei / wei.sum(dim=1, keepdim=True)  # 归一化
+wei = torch.tril(torch.ones(T, T))   # lower triangular (mask)
+wei = wei / wei.sum(dim=1, keepdim=True)  # normalize
 xbow = wei @ x                       # (T,T) @ (B,T,C) → (B,T,C)
 ```
 
-::: tip 关键洞见
-`torch.tril` 创建下三角矩阵，确保位置 `t` 只能看到 `0...t` 的信息（**因果性 / causal**）。这就是 GPT 中 **masked attention** 的本质！
+::: tip Key Insight
+`torch.tril` creates a lower triangular matrix, ensuring position `t` can only see information from `0...t` (**causality**). This is the essence of **masked attention** in GPT!
 :::
 
 ---
 
-## Step 4：Self-Attention（单头）
+## Step 4: Self-Attention (Single Head)
 
-从"平均"升级到"**加权平均**"——每个 token 通过 Query/Key/Value 决定关注哪些历史：
+Upgrading from "average" to "**weighted average**" — each token decides which history to attend to via Query/Key/Value:
 
 ```python
 class Head(nn.Module):
@@ -141,36 +141,36 @@ class Head(nn.Module):
 
     def forward(self, x):
         B, T, C = x.shape
-        k = self.key(x)    # (B, T, head_size) — "我是什么"
-        q = self.query(x)  # (B, T, head_size) — "我在找什么"
+        k = self.key(x)    # (B, T, head_size) — "what I am"
+        q = self.query(x)  # (B, T, head_size) — "what I'm looking for"
 
-        # 计算 attention scores（亲和力）
+        # Attention scores (affinities)
         wei = q @ k.transpose(-2, -1)          # (B, T, T)
-        wei = wei * k.shape[-1] ** -0.5        # 缩放（防止 softmax 饱和）
+        wei = wei * k.shape[-1] ** -0.5        # scale (prevent softmax saturation)
 
-        # 因果掩码：不能看未来
+        # Causal mask: can't see the future
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-        wei = F.softmax(wei, dim=-1)           # (B, T, T)，每行求和为 1
+        wei = F.softmax(wei, dim=-1)           # (B, T, T), each row sums to 1
 
-        v = self.value(x)  # (B, T, head_size) — "我能提供什么"
+        v = self.value(x)  # (B, T, head_size) — "what I can provide"
         out = wei @ v      # (B, T, head_size)
         return out
 ```
 
-**公式**：
+**Formula**:
 $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right) V$$
 
 <HtmlVisualization
   src="/machine-learning/build-gpt-karpathy/visualizations/attention-mask.html"
   height="520px"
-  title="因果 Attention 掩码可视化"
+  title="Causal Attention Mask Visualization"
 />
 
 ---
 
-## Step 5：Multi-Head Attention
+## Step 5: Multi-Head Attention
 
-并行运行多个 Attention Head，让模型**从不同角度**关注信息：
+Run multiple Attention Heads in parallel, letting the model **attend from different perspectives**:
 
 ```python
 class MultiHeadAttention(nn.Module):
@@ -184,23 +184,23 @@ class MultiHeadAttention(nn.Module):
         return self.proj(out)
 ```
 
-- `n_head = 6`，`head_size = n_embd // n_head = 64`
-- 拼接后通过线性层投影回 `n_embd`
+- `n_head = 6`, `head_size = n_embd // n_head = 64`
+- After concatenation, project back to `n_embd` via a linear layer
 
 ---
 
-## Step 6：Feed-Forward Network（FFN）
+## Step 6: Feed-Forward Network (FFN)
 
-Attention 做的是 token **之间**的通信，FFN 做的是每个 token **内部**的计算：
+Attention handles **communication between** tokens; FFN handles **computation within** each token:
 
 ```python
 class FeedFoward(nn.Module):
     def __init__(self, n_embd):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embd, 4 * n_embd),  # 扩展 4 倍
+            nn.Linear(n_embd, 4 * n_embd),  # expand 4×
             nn.ReLU(),
-            nn.Linear(4 * n_embd, n_embd),  # 压缩回来
+            nn.Linear(4 * n_embd, n_embd),  # compress back
             nn.Dropout(dropout),
         )
 ```
@@ -209,49 +209,49 @@ class FeedFoward(nn.Module):
 
 ---
 
-## Step 7：Transformer Block
+## Step 7: Transformer Block
 
-将 Attention + FFN 组合，加入**残差连接**和 **Pre-LayerNorm**：
+Combine Attention + FFN with **residual connections** and **Pre-LayerNorm**:
 
 ```python
 class Block(nn.Module):
     def forward(self, x):
-        x = x + self.sa(self.ln1(x))    # 残差 + Self-Attention
-        x = x + self.ffwd(self.ln2(x))  # 残差 + FFN
+        x = x + self.sa(self.ln1(x))    # residual + Self-Attention
+        x = x + self.ffwd(self.ln2(x))  # residual + FFN
         return x
 ```
 
-::: warning 注意：Pre-LN vs Post-LN
-这里用的是 **Pre-LayerNorm**（先归一化再注意力），与原始 Transformer 论文的 Post-LN 不同，训练更稳定。
+::: warning Note: Pre-LN vs Post-LN
+This uses **Pre-LayerNorm** (normalize first, then attention), different from the original Transformer paper's Post-LN, and is more stable during training.
 :::
 
 <HtmlVisualization
   src="/machine-learning/build-gpt-karpathy/visualizations/transformer-block.html"
   height="480px"
-  title="Transformer Block 结构图"
+  title="Transformer Block Structure"
 />
 
 ---
 
-## Step 8：完整 GPT 模型
+## Step 8: Complete GPT Model
 
 ```python
 class GPTLanguageModel(nn.Module):
     def __init__(self):
-        # Token embedding + 位置 embedding
+        # Token embedding + position embedding
         self.token_embedding_table    = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
 
-        # 6 个 Transformer Block
+        # 6 Transformer Blocks
         self.blocks = nn.Sequential(*[Block(n_embd, n_head) for _ in range(n_layer)])
 
-        self.ln_f   = nn.LayerNorm(n_embd)          # 最后的 LayerNorm
-        self.lm_head = nn.Linear(n_embd, vocab_size) # 输出头
+        self.ln_f   = nn.LayerNorm(n_embd)          # final LayerNorm
+        self.lm_head = nn.Linear(n_embd, vocab_size) # output head
 
     def forward(self, idx, targets=None):
         tok_emb = self.token_embedding_table(idx)                    # (B,T,n_embd)
         pos_emb = self.position_embedding_table(torch.arange(T))     # (T, n_embd)
-        x = tok_emb + pos_emb                                        # 相加！
+        x = tok_emb + pos_emb                                        # add!
         x = self.blocks(x)
         x = self.ln_f(x)
         logits = self.lm_head(x)                                     # (B,T,vocab_size)
@@ -260,29 +260,29 @@ class GPTLanguageModel(nn.Module):
 
 ---
 
-## 最终超参数
+## Final Hyperparameters
 
-| 参数 | 值 | 含义 |
-|------|----|------|
-| `n_embd` | 384 | embedding 维度 |
-| `n_head` | 6 | 注意力头数 |
-| `n_layer` | 6 | Transformer 层数 |
-| `block_size` | 256 | 上下文窗口长度 |
-| `batch_size` | 64 | 批大小 |
-| `dropout` | 0.2 | dropout 率 |
-| `learning_rate` | 3e-4 | AdamW 学习率 |
-| **总参数量** | **~10.7M** | |
+| Parameter | Value | Meaning |
+|-----------|-------|---------|
+| `n_embd` | 384 | embedding dimension |
+| `n_head` | 6 | number of attention heads |
+| `n_layer` | 6 | number of Transformer layers |
+| `block_size` | 256 | context window length |
+| `batch_size` | 64 | batch size |
+| `dropout` | 0.2 | dropout rate |
+| `learning_rate` | 3e-4 | AdamW learning rate |
+| **Total parameters** | **~10.7M** | |
 
 ---
 
-## 关键知识点总结
+## Key Takeaways
 
-1. **Causal masking**：`torch.tril` + `masked_fill(-inf)` + `softmax` = 只看过去，核心机制
-2. **Scaled attention**：除以 `√d_k` 防止点积过大导致 softmax 梯度消失
-3. **位置编码**：token embedding + position embedding 直接相加（learned，非 sinusoidal）
-4. **残差连接**：`x = x + sublayer(x)` 让梯度直接流过，训练深层网络的关键
-5. **Pre-LayerNorm**：每个子层前归一化，比原始 Transformer 更稳定
+1. **Causal masking**: `torch.tril` + `masked_fill(-inf)` + `softmax` = only look at the past, the core mechanism
+2. **Scaled attention**: divide by `√d_k` to prevent vanishing gradients from large dot products causing softmax saturation
+3. **Positional encoding**: token embedding + position embedding added directly (learned, not sinusoidal)
+4. **Residual connections**: `x = x + sublayer(x)` allows gradients to flow directly, key to training deep networks
+5. **Pre-LayerNorm**: normalize before each sublayer, more stable than the original Transformer
 
-## 相关笔记
+## Related Notes
 
-- [PyTorch 基础操作](./pytorch-basics) — 本视频中所有 PyTorch API 详解
+- [PyTorch Basics](./pytorch-basics) — All PyTorch APIs covered in this video, explained in detail

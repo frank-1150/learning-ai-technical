@@ -1,13 +1,13 @@
 ---
-title: 事实收集
-description: 零散 AI 行业事实的持续积累，积累到一定程度可升级为行业共识
+title: Facts & Data
+description: An ongoing collection of discrete AI industry facts that can be elevated to industry consensus once sufficient evidence accumulates
 tags: [industry-views, facts]
 ---
 
-# 事实收集
+# Facts & Data
 
-收录零散但有价值的行业事实，积累到一定程度后可提炼升级为[行业共识](../consensus/)。
+Collecting discrete but valuable industry facts. Once enough accumulates, they can be distilled and elevated to [Industry Consensus](../consensus/).
 
-## 归档
+## Archive
 
 - [2026-03](./2026-03)

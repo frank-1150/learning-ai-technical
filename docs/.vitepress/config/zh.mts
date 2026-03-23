@@ -43,19 +43,19 @@ export const zh = defineConfig({
 
 function nav(): DefaultTheme.NavItem[] {
   return [
-    { text: '首页', link: '/' },
+    { text: '首页', link: '/zh/' },
     {
       text: 'AI 应用',
       items: [
-        { text: '智能体的原理和操控', link: '/ai-applications/agents/' },
-        { text: '我如何使用 AI？', link: '/ai-applications/how-i-use-ai/' }
+        { text: '智能体的原理和操控', link: '/zh/ai-applications/agents/' },
+        { text: '我如何使用 AI？', link: '/zh/ai-applications/how-i-use-ai/' }
       ]
     },
     {
       text: '机器学习',
       items: [
-        { text: '神经网络', link: '/machine-learning/neural-networks/' },
-        { text: '推理优化与硬件', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' }
+        { text: '神经网络', link: '/zh/machine-learning/neural-networks/' },
+        { text: '推理优化与硬件', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' }
       ]
     }
   ]
@@ -63,54 +63,54 @@ function nav(): DefaultTheme.NavItem[] {
 
 function sidebar(): DefaultTheme.Sidebar {
   return {
-    '/ai-applications/': [
+    '/zh/ai-applications/': [
       {
         text: 'AI 应用',
         items: [
-          { text: '概览', link: '/ai-applications/' },
+          { text: '概览', link: '/zh/ai-applications/' },
           {
             text: '智能体的原理和操控',
             collapsed: false,
             items: [
-              { text: '介绍', link: '/ai-applications/agents/' },
-              { text: '智能体的核心：两个循环', link: '/ai-applications/agents/agent-loop' }
+              { text: '介绍', link: '/zh/ai-applications/agents/' },
+              { text: '智能体的核心：两个循环', link: '/zh/ai-applications/agents/agent-loop' }
             ]
           },
           {
             text: '我如何使用 AI？',
             collapsed: false,
             items: [
-              { text: '介绍', link: '/ai-applications/how-i-use-ai/' },
-              { text: 'Agent 时代真正的需求，可能是"更会执行"', link: '/ai-applications/how-i-use-ai/围绕定时调度 agent 的几个想法' }
+              { text: '介绍', link: '/zh/ai-applications/how-i-use-ai/' },
+              { text: 'Agent 时代真正的需求，可能是"更会执行"', link: '/zh/ai-applications/how-i-use-ai/围绕定时调度 agent 的几个想法' }
             ]
           },
           {
             text: 'AI 行业观点',
             collapsed: false,
             items: [
-              { text: '概览', link: '/ai-applications/industry-views/' },
+              { text: '概览', link: '/zh/ai-applications/industry-views/' },
               {
                 text: '行业共识',
                 collapsed: true,
                 items: [
-                  { text: '列表', link: '/ai-applications/industry-views/consensus/' },
-                  { text: '2026-03', link: '/ai-applications/industry-views/consensus/2026-03' }
+                  { text: '列表', link: '/zh/ai-applications/industry-views/consensus/' },
+                  { text: '2026-03', link: '/zh/ai-applications/industry-views/consensus/2026-03' }
                 ]
               },
               {
                 text: '行业人士观点',
                 collapsed: true,
                 items: [
-                  { text: '列表', link: '/ai-applications/industry-views/perspectives/' },
-                  { text: '2026-03', link: '/ai-applications/industry-views/perspectives/2026-03' }
+                  { text: '列表', link: '/zh/ai-applications/industry-views/perspectives/' },
+                  { text: '2026-03', link: '/zh/ai-applications/industry-views/perspectives/2026-03' }
                 ]
               },
               {
                 text: '事实收集',
                 collapsed: true,
                 items: [
-                  { text: '列表', link: '/ai-applications/industry-views/facts/' },
-                  { text: '2026-03', link: '/ai-applications/industry-views/facts/2026-03' }
+                  { text: '列表', link: '/zh/ai-applications/industry-views/facts/' },
+                  { text: '2026-03', link: '/zh/ai-applications/industry-views/facts/2026-03' }
                 ]
               }
             ]
@@ -118,32 +118,32 @@ function sidebar(): DefaultTheme.Sidebar {
         ]
       }
     ],
-    '/machine-learning/': [
+    '/zh/machine-learning/': [
       {
         text: '机器学习',
         items: [
-          { text: '概览', link: '/machine-learning/' },
+          { text: '概览', link: '/zh/machine-learning/' },
           {
             text: '神经网络',
             collapsed: false,
             items: [
-              { text: '介绍', link: '/machine-learning/neural-networks/' },
-              { text: 'ChatGPT 概览 (3Blue1Brown)', link: '/machine-learning/neural-networks/chatgpt-overview-3blue1brown' }
+              { text: '介绍', link: '/zh/machine-learning/neural-networks/' },
+              { text: 'ChatGPT 概览 (3Blue1Brown)', link: '/zh/machine-learning/neural-networks/chatgpt-overview-3blue1brown' }
             ]
           },
           {
             text: '推理优化与硬件',
             collapsed: false,
             items: [
-              { text: 'NVIDIA Vera Rubin + LPX', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' }
+              { text: 'NVIDIA Vera Rubin + LPX', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' }
             ]
           },
           {
             text: "Let's Build GPT (Karpathy)",
             collapsed: false,
             items: [
-              { text: '视频概览', link: '/machine-learning/build-gpt-karpathy/' },
-              { text: 'PyTorch 基础操作', link: '/machine-learning/build-gpt-karpathy/pytorch-basics' }
+              { text: '视频概览', link: '/zh/machine-learning/build-gpt-karpathy/' },
+              { text: 'PyTorch 基础操作', link: '/zh/machine-learning/build-gpt-karpathy/pytorch-basics' }
             ]
           }
         ]
