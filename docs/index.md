@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "AI Technical Notes"
   text: "From how agents run\nto where the industry is headed"
-  tagline: A practitioner's public notebook — technical deep-dives, curated industry intelligence, and original thinking on the AI era. Built to share what I'm learning and how I think.
+  tagline: A practitioner's public notebook on AI — technical deep-dives, curated industry intelligence, and original thinking on the agent era.
   actions:
     - theme: brand
       text: Start Reading
@@ -15,19 +15,19 @@ hero:
 
 features:
   - icon: 🔁
-    title: Agent Loop — How AI Agents Actually Run
-    details: A step-by-step breakdown of the two nested loops (tool-call loop + follow-up loop) that drive every AI agent, based on real open-source code. Includes an interactive visualization you can walk through yourself.
+    title: Agent Loop — How AI Agents Run
+    details: The two nested loops (tool-call loop + follow-up loop) that drive every AI agent, based on real open-source code. With an interactive step-by-step visualization.
     link: /ai-applications/agents/agent-loop
   - icon: 📡
     title: Industry Consensus, Perspectives & Facts
-    details: Monthly-curated AI industry intelligence in three layers — what the industry has broadly agreed on, what key figures like Sam Altman, Dario Amodei, and Jensen Huang are saying, and hard data points with sources and dates.
+    details: What the industry has broadly agreed on, specific views from key figures like Jensen Huang and Sam Altman, and hard data points — all sourced and dated.
     link: /ai-applications/industry-views/
   - icon: 🧠
-    title: Machine Learning Fundamentals
-    details: How neural networks store knowledge, PyTorch tensor operations from scratch, Transformer architecture internals (based on the 3Blue1Brown series), and analysis of NVIDIA's inference hardware roadmap.
+    title: Machine Learning
+    details: LLM introductory learning (neural networks, Transformer architecture via 3Blue1Brown videos) and inference acceleration (NVIDIA hardware roadmap).
     link: /machine-learning/
   - icon: 💡
-    title: How I Use AI — Tools, Sources & Original Thinking
-    details: The information sources I actually follow, plus an original essay arguing that the real competitive advantage in the agent era is not smarter models but better execution infrastructure.
+    title: How I Use AI
+    details: Information sources and thinking on how AI agents are changing how we work.
     link: /ai-applications/how-i-use-ai/
 ---
