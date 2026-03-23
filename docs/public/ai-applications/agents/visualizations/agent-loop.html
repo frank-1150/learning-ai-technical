@@ -258,100 +258,188 @@ body.dark .step-code { color: #93c5fd; }
 <body>
 
 <div class="header">
-  <h2>Agent Loop 执行流程</h2>
-  <p>两个嵌套循环如何驱动智能体持续执行</p>
+  <h2 id="title"></h2>
+  <p id="subtitle"></p>
 </div>
 
 <div class="legend">
-  <div class="legend-item"><div class="legend-dot outer"></div>外层循环（Follow-up）</div>
-  <div class="legend-item"><div class="legend-dot inner"></div>内层循环（工具调用）</div>
-  <div class="legend-item"><div class="legend-dot sys"></div>系统边界</div>
+  <div class="legend-item"><div class="legend-dot outer"></div><span id="legend-outer"></span></div>
+  <div class="legend-item"><div class="legend-dot inner"></div><span id="legend-inner"></span></div>
+  <div class="legend-item"><div class="legend-dot sys"></div><span id="legend-sys"></span></div>
 </div>
 
 <div class="steps" id="steps"></div>
 
 <div class="controls">
-  <button class="btn" id="btn-prev" disabled>◀ 上一步</button>
+  <button class="btn" id="btn-prev" disabled></button>
   <span class="counter" id="counter"></span>
-  <button class="btn primary" id="btn-next">下一步 ▶</button>
+  <button class="btn primary" id="btn-next"></button>
 </div>
 
 <script>
-const STEPS = [
-  {
-    loop: 'sys',
-    loopLabel: '系统入口',
-    title: '收到用户消息',
-    desc: 'agentLoop() 被调用，Prompt 加入上下文，发出 agent_start 和 turn_start 事件。准备进入主循环。',
-    code: 'agentLoop(prompts, context, config)\n\nawait emit({ type: "agent_start" })\nawait emit({ type: "turn_start" })'
+const T = {
+  en: {
+    title: 'Agent Loop Execution Flow',
+    subtitle: 'How two nested loops drive an agent to keep running',
+    legendOuter: 'Outer loop (Follow-up)',
+    legendInner: 'Inner loop (Tool calls)',
+    legendSys: 'System boundary',
+    prev: '◀ Prev',
+    next: 'Next ▶',
+    steps: [
+      {
+        loop: 'sys', loopLabel: 'System Entry',
+        title: 'Receive user message',
+        desc: 'agentLoop() is called, the prompt is added to context, and agent_start / turn_start events are emitted. Ready to enter the main loop.',
+        code: 'agentLoop(prompts, context, config)\n\nawait emit({ type: "agent_start" })\nawait emit({ type: "turn_start" })'
+      },
+      {
+        loop: 'outer', loopLabel: 'Outer Loop',
+        title: 'while (true) — outer loop begins',
+        desc: 'The outer loop runs forever and only exits via break when there are no Follow-up Messages.\nIts existence lets the agent accept new tasks after completing the current one, without restarting.',
+        code: '// Outer loop: waits for and handles Follow-up Messages\nwhile (true) {\n  let hasMoreToolCalls = true;\n  let pendingMessages =\n    (await config.getSteeringMessages?.()) || [];\n  // → enter inner loop\n}'
+      },
+      {
+        loop: 'inner', loopLabel: 'Inner Loop',
+        title: 'Inject Steering Messages',
+        desc: 'Steering Messages are "guidance messages" injected by the user while the agent is running (e.g. "wait, change direction").\nAt the start of each inner loop iteration, these messages are inserted into context first.\nThis is the most direct entry point for externally steering the agent.',
+        code: 'while (hasMoreToolCalls || pendingMessages.length > 0) {\n  if (pendingMessages.length > 0) {\n    for (const msg of pendingMessages) {\n      currentContext.messages.push(msg);\n      newMessages.push(msg);\n    }\n    pendingMessages = [];\n  }\n  // ...\n}'
+      },
+      {
+        loop: 'inner', loopLabel: 'Inner Loop',
+        title: 'LLM generates a response (streaming)',
+        desc: 'The LLM is called and its response is received as a stream.\nKey boundary: AgentMessage[] is converted to LLM Message[] here — the single format-conversion point in the entire system.\nStreaming events (message_start / message_update / message_end) are emitted in real time, driving UI updates.',
+        code: '// The only AgentMessage → LLM Message conversion boundary\nconst llmMessages = await config.convertToLlm(messages);\n\nconst message = await streamAssistantResponse(\n  currentContext, config, signal, emit\n);'
+      },
+      {
+        loop: 'inner', loopLabel: 'Inner Loop',
+        title: 'Check for tool calls',
+        desc: 'Filter toolCall-type content from the LLM response.\nThe result decides whether the inner loop continues:\n• Has tool calls → hasMoreToolCalls = true → continue\n• No tool calls → hasMoreToolCalls = false → prepare to exit inner loop',
+        code: 'const toolCalls = message.content.filter(\n  (c) => c.type === "toolCall"\n);\nhasMoreToolCalls = toolCalls.length > 0;'
+      },
+      {
+        loop: 'inner', loopLabel: 'Inner Loop',
+        title: 'Execute tools (full lifecycle)',
+        desc: 'Each tool call goes through a complete lifecycle:\n① validateToolArguments — validate argument format\n② beforeToolCall hook — can intercept and block execution\n③ tool.execute — sequential or parallel\n④ afterToolCall hook — can modify the return value\ntool_execution_update events are emitted throughout, enabling real-time progress feedback.',
+        code: '// beforeToolCall can block execution outright\nif (config.beforeToolCall) {\n  const r = await config.beforeToolCall({...}, signal);\n  if (r?.block) return errorResult(r.reason);\n}\n\n// Sequential or parallel execution\nif (config.toolExecution === "sequential") {\n  return executeToolCallsSequential(...);\n}\nreturn executeToolCallsParallel(...);'
+      },
+      {
+        loop: 'inner', loopLabel: 'Inner Loop',
+        title: 'Tool result → added to context → continue',
+        desc: 'Tool execution results are added to context as ToolResultMessages.\nThe inner loop returns to the top; the LLM sees the tool results and decides the next step:\n• Call more tools → execute steps 4–6 again\n• Give a final text response → hasMoreToolCalls = false',
+        code: 'for (const result of toolResults) {\n  currentContext.messages.push(result);\n  newMessages.push(result);\n}\n\n// Check for new Steering Messages, then return to loop top\npendingMessages =\n  (await config.getSteeringMessages?.()) || [];'
+      },
+      {
+        loop: 'outer', loopLabel: 'Outer Loop',
+        title: 'Inner loop exits: check for Follow-up Messages',
+        desc: 'The agent has finished the current task (no tool calls + no Steering Messages).\nThe outer loop checks here for Follow-up Messages (new requests appended after the agent finishes).\n• Has Follow-up → set as pendingMessages, continue to re-enter inner loop\n• None → break out of outer loop',
+        code: 'const followUpMessages =\n  (await config.getFollowUpMessages?.()) || [];\n\nif (followUpMessages.length > 0) {\n  // Re-enter outer loop (inner loop also restarts)\n  pendingMessages = followUpMessages;\n  continue;\n}\n\n// No more messages, exit\nbreak;'
+      },
+      {
+        loop: 'sys', loopLabel: 'System Exit',
+        title: 'Agent ends: agent_end',
+        desc: 'The outer loop exits, agent_end is emitted, and all new messages produced during this run are returned (prompt, assistant response, all tool results).\nThe EventStream closes; callers can retrieve the final message list via stream.end().',
+        code: 'await emit({\n  type: "agent_end",\n  messages: newMessages\n});\n\nreturn newMessages; // agentLoop() returns'
+      }
+    ]
   },
-  {
-    loop: 'outer',
-    loopLabel: '外层循环',
-    title: 'while (true) — 外层循环开始',
-    desc: '外层循环永远运行，只有在"没有 Follow-up Messages"时才通过 break 退出。\n它的存在让 Agent 在完成一个任务后，还能被追加新任务继续工作。',
-    code: '// 外层循环：等待并处理 Follow-up Messages\nwhile (true) {\n  let hasMoreToolCalls = true;\n  let pendingMessages =\n    (await config.getSteeringMessages?.()) || [];\n  // → 进入内层循环\n}'
-  },
-  {
-    loop: 'inner',
-    loopLabel: '内层循环',
-    title: '注入 Steering Messages',
-    desc: 'Steering Messages 是用户在 Agent 运行期间注入的"引导消息"（如"等等，换个方向"）。\n每次内层循环迭代开始时，先把这些消息插入上下文。\n这是从外部"操控"智能体最直接的入口。',
-    code: 'while (hasMoreToolCalls || pendingMessages.length > 0) {\n  if (pendingMessages.length > 0) {\n    for (const msg of pendingMessages) {\n      currentContext.messages.push(msg);\n      newMessages.push(msg);\n    }\n    pendingMessages = [];\n  }\n  // ...\n}'
-  },
-  {
-    loop: 'inner',
-    loopLabel: '内层循环',
-    title: 'LLM 生成回复（流式）',
-    desc: '调用 LLM 并流式接收回复。\n关键边界：AgentMessage[] 在这里才被转换为 LLM Message[]，这是整个系统中唯一的格式转换点。\n流式事件（message_start / message_update / message_end）实时发出，驱动 UI 更新。',
-    code: '// 唯一的 AgentMessage → LLM Message 转换边界\nconst llmMessages = await config.convertToLlm(messages);\n\nconst message = await streamAssistantResponse(\n  currentContext, config, signal, emit\n);'
-  },
-  {
-    loop: 'inner',
-    loopLabel: '内层循环',
-    title: '检查工具调用',
-    desc: '从 LLM 回复中过滤 toolCall 类型的 content。\n结果决定内层循环是否继续：\n• 有工具调用 → hasMoreToolCalls = true → 继续\n• 无工具调用 → hasMoreToolCalls = false → 准备退出内层循环',
-    code: 'const toolCalls = message.content.filter(\n  (c) => c.type === "toolCall"\n);\nhasMoreToolCalls = toolCalls.length > 0;'
-  },
-  {
-    loop: 'inner',
-    loopLabel: '内层循环',
-    title: '执行工具（完整生命周期）',
-    desc: '每个工具调用经历完整生命周期：\n① validateToolArguments — 参数校验\n② beforeToolCall hook — 可以拦截并阻止执行\n③ tool.execute — 串行（sequential）或并行（parallel）\n④ afterToolCall hook — 可以修改返回结果\n执行期间持续发出 tool_execution_update 事件，支持实时进度反馈。',
-    code: '// beforeToolCall 可以直接阻止执行\nif (config.beforeToolCall) {\n  const r = await config.beforeToolCall({...}, signal);\n  if (r?.block) return errorResult(r.reason);\n}\n\n// 串行 or 并行执行\nif (config.toolExecution === "sequential") {\n  return executeToolCallsSequential(...);\n}\nreturn executeToolCallsParallel(...);'
-  },
-  {
-    loop: 'inner',
-    loopLabel: '内层循环',
-    title: '工具结果 → 加入上下文 → 继续',
-    desc: '工具执行结果作为 ToolResultMessage 加入上下文。\n内层循环回到顶部，LLM 看到工具结果后决定下一步：\n• 继续调用更多工具 → 再次执行步骤 4–6\n• 给出最终文字回复 → hasMoreToolCalls = false',
-    code: 'for (const result of toolResults) {\n  currentContext.messages.push(result);\n  newMessages.push(result);\n}\n\n// 检查新的 Steering Messages 后回到循环顶\npendingMessages =\n  (await config.getSteeringMessages?.()) || [];'
-  },
-  {
-    loop: 'outer',
-    loopLabel: '外层循环',
-    title: '内层循环退出：检查 Follow-up Messages',
-    desc: 'Agent 完成了当前任务（无工具调用 + 无 Steering Messages）。\n外层循环在这里检查是否有 Follow-up Messages（Agent 完成后用户追加的新请求）。\n• 有 Follow-up → 设为 pendingMessages，continue 重入内层循环\n• 无 → break 退出外层循环',
-    code: 'const followUpMessages =\n  (await config.getFollowUpMessages?.()) || [];\n\nif (followUpMessages.length > 0) {\n  // 重新进入外层循环（内层循环也会重新开始）\n  pendingMessages = followUpMessages;\n  continue;\n}\n\n// 没有更多消息，退出\nbreak;'
-  },
-  {
-    loop: 'sys',
-    loopLabel: '系统出口',
-    title: 'Agent 结束：agent_end',
-    desc: '外层循环退出，发出 agent_end 事件，返回本次运行产生的所有新消息（包含 Prompt、Assistant 回复、所有工具结果）。EventStream 关闭，调用方可以通过 stream.end() 获取最终消息列表。',
-    code: 'await emit({\n  type: "agent_end",\n  messages: newMessages\n});\n\nreturn newMessages; // agentLoop() 返回'
+  zh: {
+    title: 'Agent Loop 执行流程',
+    subtitle: '两个嵌套循环如何驱动智能体持续执行',
+    legendOuter: '外层循环（Follow-up）',
+    legendInner: '内层循环（工具调用）',
+    legendSys: '系统边界',
+    prev: '◀ 上一步',
+    next: '下一步 ▶',
+    steps: [
+      {
+        loop: 'sys', loopLabel: '系统入口',
+        title: '收到用户消息',
+        desc: 'agentLoop() 被调用，Prompt 加入上下文，发出 agent_start 和 turn_start 事件。准备进入主循环。',
+        code: 'agentLoop(prompts, context, config)\n\nawait emit({ type: "agent_start" })\nawait emit({ type: "turn_start" })'
+      },
+      {
+        loop: 'outer', loopLabel: '外层循环',
+        title: 'while (true) — 外层循环开始',
+        desc: '外层循环永远运行，只有在"没有 Follow-up Messages"时才通过 break 退出。\n它的存在让 Agent 在完成一个任务后，还能被追加新任务继续工作。',
+        code: '// 外层循环：等待并处理 Follow-up Messages\nwhile (true) {\n  let hasMoreToolCalls = true;\n  let pendingMessages =\n    (await config.getSteeringMessages?.()) || [];\n  // → 进入内层循环\n}'
+      },
+      {
+        loop: 'inner', loopLabel: '内层循环',
+        title: '注入 Steering Messages',
+        desc: 'Steering Messages 是用户在 Agent 运行期间注入的"引导消息"（如"等等，换个方向"）。\n每次内层循环迭代开始时，先把这些消息插入上下文。\n这是从外部"操控"智能体最直接的入口。',
+        code: 'while (hasMoreToolCalls || pendingMessages.length > 0) {\n  if (pendingMessages.length > 0) {\n    for (const msg of pendingMessages) {\n      currentContext.messages.push(msg);\n      newMessages.push(msg);\n    }\n    pendingMessages = [];\n  }\n  // ...\n}'
+      },
+      {
+        loop: 'inner', loopLabel: '内层循环',
+        title: 'LLM 生成回复（流式）',
+        desc: '调用 LLM 并流式接收回复。\n关键边界：AgentMessage[] 在这里才被转换为 LLM Message[]，这是整个系统中唯一的格式转换点。\n流式事件（message_start / message_update / message_end）实时发出，驱动 UI 更新。',
+        code: '// 唯一的 AgentMessage → LLM Message 转换边界\nconst llmMessages = await config.convertToLlm(messages);\n\nconst message = await streamAssistantResponse(\n  currentContext, config, signal, emit\n);'
+      },
+      {
+        loop: 'inner', loopLabel: '内层循环',
+        title: '检查工具调用',
+        desc: '从 LLM 回复中过滤 toolCall 类型的 content。\n结果决定内层循环是否继续：\n• 有工具调用 → hasMoreToolCalls = true → 继续\n• 无工具调用 → hasMoreToolCalls = false → 准备退出内层循环',
+        code: 'const toolCalls = message.content.filter(\n  (c) => c.type === "toolCall"\n);\nhasMoreToolCalls = toolCalls.length > 0;'
+      },
+      {
+        loop: 'inner', loopLabel: '内层循环',
+        title: '执行工具（完整生命周期）',
+        desc: '每个工具调用经历完整生命周期：\n① validateToolArguments — 参数校验\n② beforeToolCall hook — 可以拦截并阻止执行\n③ tool.execute — 串行（sequential）或并行（parallel）\n④ afterToolCall hook — 可以修改返回结果\n执行期间持续发出 tool_execution_update 事件，支持实时进度反馈。',
+        code: '// beforeToolCall 可以直接阻止执行\nif (config.beforeToolCall) {\n  const r = await config.beforeToolCall({...}, signal);\n  if (r?.block) return errorResult(r.reason);\n}\n\n// 串行 or 并行执行\nif (config.toolExecution === "sequential") {\n  return executeToolCallsSequential(...);\n}\nreturn executeToolCallsParallel(...);'
+      },
+      {
+        loop: 'inner', loopLabel: '内层循环',
+        title: '工具结果 → 加入上下文 → 继续',
+        desc: '工具执行结果作为 ToolResultMessage 加入上下文。\n内层循环回到顶部，LLM 看到工具结果后决定下一步：\n• 继续调用更多工具 → 再次执行步骤 4–6\n• 给出最终文字回复 → hasMoreToolCalls = false',
+        code: 'for (const result of toolResults) {\n  currentContext.messages.push(result);\n  newMessages.push(result);\n}\n\n// 检查新的 Steering Messages 后回到循环顶\npendingMessages =\n  (await config.getSteeringMessages?.()) || [];'
+      },
+      {
+        loop: 'outer', loopLabel: '外层循环',
+        title: '内层循环退出：检查 Follow-up Messages',
+        desc: 'Agent 完成了当前任务（无工具调用 + 无 Steering Messages）。\n外层循环在这里检查是否有 Follow-up Messages（Agent 完成后用户追加的新请求）。\n• 有 Follow-up → 设为 pendingMessages，continue 重入内层循环\n• 无 → break 退出外层循环',
+        code: 'const followUpMessages =\n  (await config.getFollowUpMessages?.()) || [];\n\nif (followUpMessages.length > 0) {\n  // 重新进入外层循环（内层循环也会重新开始）\n  pendingMessages = followUpMessages;\n  continue;\n}\n\n// 没有更多消息，退出\nbreak;'
+      },
+      {
+        loop: 'sys', loopLabel: '系统出口',
+        title: 'Agent 结束：agent_end',
+        desc: '外层循环退出，发出 agent_end 事件，返回本次运行产生的所有新消息（包含 Prompt、Assistant 回复、所有工具结果）。EventStream 关闭，调用方可以通过 stream.end() 获取最终消息列表。',
+        code: 'await emit({\n  type: "agent_end",\n  messages: newMessages\n});\n\nreturn newMessages; // agentLoop() 返回'
+      }
+    ]
   }
-];
+};
 
 let current = 0;
+let lang = 'en';
+
+function getLang() {
+  try {
+    const raw = window.parent.document.documentElement.lang || '';
+    return raw.startsWith('zh') ? 'zh' : 'en';
+  } catch(e) {
+    return 'en';
+  }
+}
 
 function esc(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function render() {
+  const t = T[lang];
+  const steps = t.steps;
+
+  document.getElementById('title').textContent = t.title;
+  document.getElementById('subtitle').textContent = t.subtitle;
+  document.getElementById('legend-outer').textContent = t.legendOuter;
+  document.getElementById('legend-inner').textContent = t.legendInner;
+  document.getElementById('legend-sys').textContent = t.legendSys;
+  document.getElementById('btn-prev').textContent = t.prev;
+  document.getElementById('btn-next').textContent = t.next;
+
   const container = document.getElementById('steps');
-  container.innerHTML = STEPS.map((s, i) => {
+  container.innerHTML = steps.map((s, i) => {
     let cls = 'step';
     if (i === current) cls += ' active';
     else if (i > current) cls += ' todo';
@@ -369,9 +457,9 @@ function render() {
     `;
   }).join('');
 
-  document.getElementById('counter').textContent = `${current + 1} / ${STEPS.length}`;
+  document.getElementById('counter').textContent = `${current + 1} / ${steps.length}`;
   document.getElementById('btn-prev').disabled = current === 0;
-  document.getElementById('btn-next').disabled = current === STEPS.length - 1;
+  document.getElementById('btn-next').disabled = current === steps.length - 1;
 
   const activeEl = container.children[current];
   if (activeEl) {
@@ -385,13 +473,14 @@ function goTo(i) {
 }
 
 document.getElementById('btn-prev').onclick = () => { if (current > 0) { current--; render(); } };
-document.getElementById('btn-next').onclick = () => { if (current < STEPS.length - 1) { current++; render(); } };
+document.getElementById('btn-next').onclick = () => { if (current < T[lang].steps.length - 1) { current++; render(); } };
 
 function syncTheme() {
   try {
     const isDark = window.parent.document.documentElement.classList.contains('dark');
     document.body.classList.toggle('dark', isDark);
   } catch(e) {}
+  lang = getLang();
   render();
 }
 
@@ -400,7 +489,7 @@ syncTheme();
 try {
   new MutationObserver(syncTheme).observe(
     window.parent.document.documentElement,
-    { attributes: true, attributeFilter: ['class'] }
+    { attributes: true, attributeFilter: ['class', 'lang'] }
   );
 } catch(e) {}
 </script>
