@@ -2,9 +2,9 @@
 layout: home
 
 hero:
-  name: "AI Technical Notes"
-  text: "From how agents run\nto where the industry is headed"
-  tagline: A practitioner's public notebook on AI — technical deep-dives, curated industry intelligence, and original thinking on the agent era.
+  name: "AI Learning Notes"
+  text: "AI applications, hardware & algorithms,\nand my learning journey"
+  tagline: Notes from a software engineer who loves AI — building understanding from the ground up.
   actions:
     - theme: brand
       text: Start Reading

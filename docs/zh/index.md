@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "AI 技术学习笔记"
-  text: "从智能体如何运行\n到行业下一步走向"
-  tagline: 一个 AI 从业者的公开笔记本——技术原理深度拆解、行业情报持续整理、Agent 时代的原创思考。
+  text: "AI 应用、硬件与算法原理\n以及我的学习之旅"
+  tagline: 一个喜欢 AI 的软件工程师的公开笔记——从零建立对 AI 的系统理解。
   actions:
     - theme: brand
       text: 开始阅读
