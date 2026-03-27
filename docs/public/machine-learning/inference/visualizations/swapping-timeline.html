@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vLLM Swapping Timeline</title>
+<style>
+:root{--bg:#fff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--text-secondary:#64748b;--accent:#3b82f6;--accent-light:#dbeafe;--green:#22c55e;--green-light:#dcfce7;--orange:#f97316;--orange-light:#ffedd5;--purple:#a855f7;--purple-light:#f3e8ff;--red:#ef4444;--red-light:#fee2e2;--yellow:#eab308;--yellow-light:#fef9c3;}
+body.dark{--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--text-secondary:#94a3b8;--accent:#60a5fa;--accent-light:#1e3a5f;--green:#4ade80;--green-light:#052e16;--orange:#fb923c;--orange-light:#431407;--purple:#c084fc;--purple-light:#2e1065;--red:#f87171;--red-light:#450a0a;--yellow:#facc15;--yellow-light:#422006;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:20px;font-size:13px;line-height:1.6;}
+h3{font-size:15px;font-weight:600;margin-bottom:5px;}
+.subtitle{font-size:12px;color:var(--text-secondary);margin-bottom:14px;}
+
+/* Timeline */
+.timeline{position:relative;margin:10px 0 4px 0;}
+.timeline-axis{display:flex;gap:0;margin-bottom:4px;}
+.t-step{flex:1;text-align:center;font-size:10px;color:var(--text-secondary);padding:3px 2px;background:var(--surface);border:1px solid var(--border);border-right:none;font-weight:600;}
+.t-step:last-child{border-right:1px solid var(--border);}
+.t-step.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+/* Memory lanes */
+.lanes{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.lane{display:flex;align-items:center;gap:8px;}
+.lane-label{width:100px;font-size:11px;font-weight:600;color:var(--text-secondary);flex-shrink:0;text-align:right;}
+.lane-cells{display:flex;gap:0;flex:1;}
+.cell{flex:1;height:36px;border:1px solid var(--border);border-right:none;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;transition:all .4s ease;position:relative;}
+.cell:last-child{border-right:1px solid var(--border);}
+
+/* Cell states */
+.cell-empty{background:var(--surface);color:var(--text-secondary);}
+.cell-req-a{background:var(--orange-light);color:var(--orange);}
+.cell-req-b{background:var(--green-light);color:var(--green);}
+.cell-req-c{background:var(--purple-light);color:var(--purple);}
+.cell-req-d{background:var(--accent-light);color:var(--accent);}
+.cell-swap-out{background:var(--red-light);color:var(--red);border:2px dashed var(--red);}
+.cell-cpu{background:var(--yellow-light);color:var(--yellow);}
+.cell-swap-in{background:var(--green-light);color:var(--green);border:2px dashed var(--green);}
+.cell-free{background:var(--surface);color:var(--text-secondary);font-style:italic;}
+
+/* Arrow */
+.swap-arrow{position:absolute;font-size:16px;z-index:10;}
+
+/* Step description */
+.step-desc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--text);border-left:3px solid var(--accent);min-height:54px;}
+.step-title{font-weight:700;color:var(--accent);margin-bottom:3px;}
+
+/* Memory gauge */
+.gauges{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;}
+.gauge-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;flex:1;min-width:130px;}
+.gauge-label{font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:6px;}
+.gauge-bar-wrap{height:18px;background:var(--border);border-radius:4px;overflow:hidden;position:relative;}
+.gauge-bar{height:100%;border-radius:4px;transition:width .6s ease;}
+.gauge-val{font-size:11px;font-weight:700;margin-top:3px;}
+
+/* Controls */
+.controls{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap;}
+button{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;transition:all .2s;font-weight:500;}
+button:hover{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+button.primary:hover{opacity:.88;}
+.status{font-size:12px;color:var(--text-secondary);padding:4px 10px;background:var(--surface);border-radius:20px;border:1px solid var(--border);}
+
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:11px;}
+.leg-item{display:flex;align-items:center;gap:4px;}
+.leg-dot{width:12px;height:12px;border-radius:2px;}
+</style>
+</head>
+<body>
+<h3 id="t-title">Swapping 时序图：GPU ↔ CPU 内存搬运</h3>
+<p class="subtitle" id="t-subtitle">当 GPU 物理块耗尽时，vLLM 将整组序列的 KV cache 换出到 CPU，当内存释放后再换回</p>
+
+<!-- Timeline axis -->
+<div class="timeline-axis" id="timeline-axis"></div>
+
+<!-- Memory lanes -->
+<div class="lanes" id="lanes-container">
+  <!-- GPU blocks lane -->
+  <div class="lane">
+    <div class="lane-label" id="t-gpu-label">GPU 物理块</div>
+    <div class="lane-cells" id="gpu-lane"></div>
+  </div>
+  <!-- CPU lane -->
+  <div class="lane">
+    <div class="lane-label" id="t-cpu-label">CPU 内存<br><span style="font-size:9px;color:var(--text-secondary);">(swap space)</span></div>
+    <div class="lane-cells" id="cpu-lane"></div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend" id="legend">
+  <div class="leg-item"><div class="leg-dot" style="background:var(--orange-light);border:1px solid var(--orange);"></div><span id="t-leg-a"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--green-light);border:1px solid var(--green);"></div><span id="t-leg-b"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--purple-light);border:1px solid var(--purple);"></div><span id="t-leg-c"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--red-light);border:2px dashed var(--red);"></div><span id="t-leg-swap-out"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--yellow-light);border:1px solid var(--yellow);"></div><span id="t-leg-cpu"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--green-light);border:2px dashed var(--green);"></div><span id="t-leg-swap-in"></span></div>
+</div>
+
+<!-- Memory gauges -->
+<div class="gauges">
+  <div class="gauge-box">
+    <div class="gauge-label" id="t-gpu-gauge">GPU 显存占用</div>
+    <div class="gauge-bar-wrap"><div class="gauge-bar" id="gpu-gauge-bar" style="background:var(--orange);"></div></div>
+    <div class="gauge-val" id="gpu-gauge-val">3/4 块已用</div>
+  </div>
+  <div class="gauge-box">
+    <div class="gauge-label" id="t-cpu-gauge">CPU 内存占用</div>
+    <div class="gauge-bar-wrap"><div class="gauge-bar" id="cpu-gauge-bar" style="background:var(--yellow);"></div></div>
+    <div class="gauge-val" id="cpu-gauge-val">0/4 块已用</div>
+  </div>
+</div>
+
+<!-- Step desc -->
+<div class="step-desc" id="step-desc"></div>
+
+<!-- Controls -->
+<div class="controls">
+  <button onclick="prevStep()" id="btn-prev">← 上一步</button>
+  <button class="primary" onclick="nextStep()" id="btn-next">下一步 →</button>
+  <button onclick="resetAll()" id="btn-reset">重置</button>
+  <span class="status" id="step-status">步骤 1 / 6</span>
+</div>
+
+<script>
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+
+const TR={
+  zh:{
+    title:'Swapping 时序图：GPU ↔ CPU 内存搬运',
+    subtitle:'当 GPU 物理块耗尽时，vLLM 将整组序列的 KV cache 换出到 CPU，当内存释放后再换回',
+    gpuLabel:'GPU 物理块',
+    cpuLabel:'CPU 内存\n(swap space)',
+    legA:'请求 A（运行中）',legB:'请求 B（运行中）',legC:'请求 C（被抢占）',
+    legSwapOut:'Swap Out（换出中）',legCpu:'在 CPU 内存中',legSwapIn:'Swap In（换回中）',
+    gpuGauge:'GPU 显存占用',cpuGauge:'CPU 内存占用',
+    btnPrev:'← 上一步',btnNext:'下一步 →',btnReset:'重置',
+    stepStatus:(s,t)=>`步骤 ${s} / ${t}`,
+    timeLabels:['T0\n初始','T1\n块耗尽','T2\nSwap Out','T3\n继续服务','T4\nA完成','T5\nSwap In'],
+    steps:[
+      {title:'T0：正常服务',desc:'GPU 上有 4 个物理块（简化示意）。请求 A 占用 1 块，请求 B 占用 1 块，请求 C 占用 2 块。所有请求正常生成 token。'},
+      {title:'T1：GPU 物理块耗尽',desc:'新 token 生成需要新的物理块，但 GPU 显存中的物理块已全部被占用。vLLM 需要决定换出哪组序列。\n\n按 FCFS 策略，最新到达的请求 C（最后到达）被选中抢占。'},
+      {title:'T2：Swap Out —— 请求 C 换出到 CPU',desc:'vLLM 将请求 C 的所有 KV cache block 从 GPU 显存搬运到 CPU 内存（All-or-Nothing：整组 block 一起换出）。\n\n换出后，GPU 释放出 2 个物理块用于新请求。CPU 内存占用增加。'},
+      {title:'T3：继续服务其他请求',desc:'请求 A 和 B 继续生成 token，使用刚释放的 GPU 物理块。请求 C 的 KV cache 安全地保存在 CPU 内存中，等待 GPU 资源空闲。'},
+      {title:'T4：请求 A 完成，释放块',desc:'请求 A 生成了 <eos> token，服务完成。其占用的 GPU 物理块被释放。\n\n此时 GPU 有了空闲块，可以将请求 C 换回来继续服务。'},
+      {title:'T5：Swap In —— 请求 C 换回 GPU',desc:'vLLM 将请求 C 的 KV cache 从 CPU 内存搬回 GPU 显存（Block Table 映射更新为新的物理块地址）。\n\n请求 C 继续从被中断的地方生成 token，用户感知到的只是延迟略微增加。\n\n⚠️ 关键约束：CPU 内存需求 ≤ GPU 为 KV cache 分配的显存（因为 swap out 的数据来自 GPU，总量有上界）。'}
+    ]
+  },
+  en:{
+    title:'Swapping Timeline: GPU ↔ CPU Memory Transfer',
+    subtitle:'When GPU blocks are exhausted, vLLM swaps out a sequence group\'s KV cache to CPU, then swaps back when memory frees up',
+    gpuLabel:'GPU Physical Blocks',
+    cpuLabel:'CPU Memory\n(swap space)',
+    legA:'Request A (running)',legB:'Request B (running)',legC:'Request C (preempted)',
+    legSwapOut:'Swap Out',legCpu:'In CPU Memory',legSwapIn:'Swap In',
+    gpuGauge:'GPU Memory Usage',cpuGauge:'CPU Memory Usage',
+    btnPrev:'← Prev',btnNext:'Next →',btnReset:'Reset',
+    stepStatus:(s,t)=>`Step ${s} / ${t}`,
+    timeLabels:['T0\nInitial','T1\nBlocks Full','T2\nSwap Out','T3\nServing','T4\nA Done','T5\nSwap In'],
+    steps:[
+      {title:'T0: Normal Serving',desc:'GPU has 4 physical blocks (simplified). Request A uses 1, Request B uses 1, Request C uses 2. All requests generating tokens normally.'},
+      {title:'T1: GPU Physical Blocks Exhausted',desc:'Generating the next token requires a new physical block, but all GPU blocks are occupied. vLLM must decide which sequence group to preempt.\n\nBy FCFS policy, the most recently arrived Request C is selected for preemption.'},
+      {title:'T2: Swap Out — Request C → CPU',desc:'vLLM moves all KV cache blocks of Request C from GPU to CPU memory (All-or-Nothing: the entire group swaps out together).\n\nGPU frees 2 blocks for new requests. CPU memory usage increases.'},
+      {title:'T3: Continue Serving Other Requests',desc:'Requests A and B continue generating tokens using the freed GPU blocks. Request C\'s KV cache is safely in CPU memory, waiting for GPU resources.'},
+      {title:'T4: Request A Completes, Blocks Released',desc:'Request A generates <eos>, service complete. Its GPU blocks are freed.\n\nGPU now has free blocks — Request C can be swapped back to continue.'},
+      {title:'T5: Swap In — Request C → GPU',desc:'vLLM moves Request C\'s KV cache from CPU back to GPU (Block Table updated with new physical block addresses).\n\nRequest C resumes generation from where it was interrupted. Users only experience a slight latency increase.\n\n⚠️ Key constraint: CPU memory needed ≤ GPU memory allocated for KV cache (swap data comes from GPU, so total is bounded).'}
+    ]
+  }
+};
+
+// Timeline data per step
+// GPU: [{slot, cls, label}] (4 slots)
+// CPU: [{slot, cls, label}] (4 slots)
+const STATES = [
+  // T0
+  {gpu:[{cls:'cell-req-a',l:'A'},{cls:'cell-req-b',l:'B'},{cls:'cell-req-c',l:'C'},{cls:'cell-req-c',l:'C'}],
+   cpu:[{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-empty',l:''}],
+   gpuPct:100,cpuPct:0,gpuTxt:'4/4',cpuTxt:'0/4'},
+  // T1
+  {gpu:[{cls:'cell-req-a',l:'A'},{cls:'cell-req-b',l:'B'},{cls:'cell-req-c',l:'C!'},{cls:'cell-req-c',l:'C!'}],
+   cpu:[{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-empty',l:''}],
+   gpuPct:100,cpuPct:0,gpuTxt:'4/4 ⚠️',cpuTxt:'0/4'},
+  // T2
+  {gpu:[{cls:'cell-req-a',l:'A'},{cls:'cell-req-b',l:'B'},{cls:'cell-free',l:'free'},{cls:'cell-free',l:'free'}],
+   cpu:[{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-cpu',l:'C'},{cls:'cell-cpu',l:'C'}],
+   gpuPct:50,cpuPct:50,gpuTxt:'2/4',cpuTxt:'2/4'},
+  // T3
+  {gpu:[{cls:'cell-req-a',l:'A'},{cls:'cell-req-b',l:'B'},{cls:'cell-req-d',l:'new'},{cls:'cell-req-d',l:'new'}],
+   cpu:[{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-cpu',l:'C'},{cls:'cell-cpu',l:'C'}],
+   gpuPct:100,cpuPct:50,gpuTxt:'4/4',cpuTxt:'2/4'},
+  // T4
+  {gpu:[{cls:'cell-free',l:'free'},{cls:'cell-req-b',l:'B'},{cls:'cell-req-d',l:'new'},{cls:'cell-req-d',l:'new'}],
+   cpu:[{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-cpu',l:'C'},{cls:'cell-cpu',l:'C'}],
+   gpuPct:75,cpuPct:50,gpuTxt:'3/4',cpuTxt:'2/4'},
+  // T5
+  {gpu:[{cls:'cell-req-c',l:'C'},{cls:'cell-req-b',l:'B'},{cls:'cell-req-d',l:'new'},{cls:'cell-req-d',l:'new'}],
+   cpu:[{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-empty',l:''},{cls:'cell-empty',l:''}],
+   gpuPct:100,cpuPct:0,gpuTxt:'4/4',cpuTxt:'0/4'}
+];
+
+let currentStep = 0;
+let lang = 'zh';
+let T = TR.zh;
+
+function render(step) {
+  const state = STATES[step];
+  const s = T.steps[step];
+
+  // Timeline axis
+  const ta = document.getElementById('timeline-axis');
+  ta.innerHTML = T.timeLabels.map((l,i) => {
+    const lines = l.split('\n');
+    return `<div class="t-step${i===step?' active':''}">${lines[0]}<br>${lines[1]}</div>`;
+  }).join('');
+
+  // GPU lane
+  const gpu = document.getElementById('gpu-lane');
+  gpu.innerHTML = state.gpu.map(c => `<div class="cell ${c.cls}">${c.l}</div>`).join('');
+
+  // CPU lane
+  const cpu = document.getElementById('cpu-lane');
+  cpu.innerHTML = state.cpu.map(c => `<div class="cell ${c.cls}">${c.l}</div>`).join('');
+
+  // Gauges
+  document.getElementById('gpu-gauge-bar').style.width = state.gpuPct + '%';
+  document.getElementById('cpu-gauge-bar').style.width = state.cpuPct + '%';
+  document.getElementById('gpu-gauge-val').textContent = state.gpuTxt + (lang==='zh'?' 块已用':' blocks used');
+  document.getElementById('cpu-gauge-val').textContent = state.cpuTxt + (lang==='zh'?' 块已用':' blocks used');
+
+  // Step desc
+  const sd = document.getElementById('step-desc');
+  sd.innerHTML = `<div class="step-title">${s.title}</div><div>${s.desc.replace(/\n/g,'<br>')}</div>`;
+  document.getElementById('step-status').textContent = T.stepStatus(step+1, 6);
+}
+
+function goToStep(s) { currentStep = s; render(s); }
+function nextStep() { if(currentStep < 5) goToStep(currentStep+1); }
+function prevStep() { if(currentStep > 0) goToStep(currentStep-1); }
+function resetAll() { currentStep = 0; render(0); }
+
+function applyLang() {
+  lang = getLang(); T = TR[lang];
+  document.getElementById('t-title').textContent = T.title;
+  document.getElementById('t-subtitle').textContent = T.subtitle;
+  document.getElementById('t-gpu-label').textContent = T.gpuLabel;
+  document.getElementById('t-cpu-label').innerHTML = T.cpuLabel.replace('\n','<br>');
+  document.getElementById('t-leg-a').textContent = T.legA;
+  document.getElementById('t-leg-b').textContent = T.legB;
+  document.getElementById('t-leg-c').textContent = T.legC;
+  document.getElementById('t-leg-swap-out').textContent = T.legSwapOut;
+  document.getElementById('t-leg-cpu').textContent = T.legCpu;
+  document.getElementById('t-leg-swap-in').textContent = T.legSwapIn;
+  document.getElementById('t-gpu-gauge').textContent = T.gpuGauge;
+  document.getElementById('t-cpu-gauge').textContent = T.cpuGauge;
+  document.getElementById('btn-prev').textContent = T.btnPrev;
+  document.getElementById('btn-next').textContent = T.btnNext;
+  document.getElementById('btn-reset').textContent = T.btnReset;
+}
+
+function syncTheme() {
+  try { const d=window.parent.document.body.classList.contains('dark')||window.parent.document.documentElement.classList.contains('dark'); document.body.classList.toggle('dark',d); } catch(e) {}
+}
+
+applyLang();
+resetAll();
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['class']}); } catch(e) {}
+try { new MutationObserver(syncTheme).observe(window.parent.document.body,{attributes:true,attributeFilter:['class']}); } catch(e) {}
+</script>
+</body>
+</html>

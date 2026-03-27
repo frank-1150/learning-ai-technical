@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PagedAttention 分块计算</title>
+<style>
+:root {
+  --bg:#ffffff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--text-secondary:#64748b;
+  --accent:#3b82f6;--accent-light:#dbeafe;
+  --green:#22c55e;--green-light:#dcfce7;
+  --orange:#f97316;--orange-light:#ffedd5;
+  --purple:#a855f7;--purple-light:#f3e8ff;
+}
+body.dark{
+  --bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--text-secondary:#94a3b8;
+  --accent:#60a5fa;--accent-light:#1e3a5f;
+  --green:#4ade80;--green-light:#052e16;
+  --orange:#fb923c;--orange-light:#431407;
+  --purple:#c084fc;--purple-light:#2e1065;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:16px;font-size:13px;line-height:1.5;}
+
+h3{font-size:14px;font-weight:700;margin-bottom:4px;}
+.subtitle{font-size:11px;color:var(--text-secondary);margin-bottom:12px;}
+
+/* ── Top: two-column layout ── */
+.top-row{display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:start;}
+
+/* Memory panel */
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;}
+.panel-title{font-size:10px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+
+/* Physical blocks — vertical list */
+.phys-list{display:flex;flex-direction:column;gap:5px;}
+.phys-block{border-radius:6px;padding:5px 8px;border:2px solid transparent;transition:all .25s;}
+.phys-block.b0{background:var(--orange-light);border-color:var(--orange);color:var(--orange);}
+.phys-block.b1{background:var(--green-light);border-color:var(--green);color:var(--green);}
+.phys-block.b2{background:var(--purple-light);border-color:var(--purple);color:var(--purple);}
+.phys-block .pb-num{font-size:10px;font-weight:700;}
+.phys-block .pb-toks{font-size:10px;margin-top:1px;opacity:.85;}
+.phys-block.active{box-shadow:0 0 0 3px currentColor;transform:scale(1.03);}
+.phys-block.dim{opacity:.2;}
+
+.query-tag{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:5px;font-size:11px;font-weight:700;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent);}
+.addr-note{font-size:10px;color:var(--text-secondary);margin-top:7px;line-height:1.5;border-left:2px solid var(--accent);padding-left:6px;}
+
+/* Steps panel */
+.step{display:flex;align-items:flex-start;gap:8px;padding:6px 8px;border-radius:6px;margin-bottom:5px;border:1px solid transparent;transition:all .25s;cursor:pointer;}
+.step:hover{background:var(--surface);}
+.step.active{border-color:var(--accent);background:var(--accent-light);}
+.step-num{min-width:20px;height:20px;border-radius:50%;background:var(--border);color:var(--text-secondary);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.step.active .step-num{background:var(--accent);color:#fff;}
+.step-text{font-size:11px;color:var(--text);}
+
+/* ── Bottom: matrix area ── */
+.matrix-area{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:10px;overflow:auto;max-height:170px;}
+.matrix-title{font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;}
+.matrix-wrap{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;}
+.matrix{border:1px solid var(--border);border-radius:5px;overflow:hidden;}
+.matrix table{border-collapse:collapse;}
+.matrix td{padding:4px 7px;font-size:10px;text-align:center;border:1px solid var(--border);min-width:34px;font-weight:500;}
+.matrix td.hdr{background:var(--surface);color:var(--text-secondary);font-weight:700;font-size:9px;}
+.matrix td.b0{background:var(--orange-light);color:var(--orange);}
+.matrix td.b1{background:var(--green-light);color:var(--green);}
+.matrix td.b2{background:var(--purple-light);color:var(--purple);}
+.matrix td.res{background:var(--accent-light);color:var(--accent);font-weight:700;}
+.matrix td.qc{background:var(--accent-light);color:var(--accent);font-weight:700;}
+.op{font-size:18px;color:var(--text-secondary);align-self:center;}
+
+/* horizontal table wrapper */
+.htable-wrap{overflow-x:auto;width:100%;}
+
+/* Controls */
+.controls{display:flex;gap:6px;margin-top:10px;align-items:center;flex-wrap:wrap;}
+button{padding:5px 11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;transition:all .18s;font-weight:500;}
+button:hover{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+button.primary:hover{opacity:.85;}
+.status{font-size:11px;color:var(--text-secondary);padding:3px 9px;background:var(--surface);border-radius:20px;border:1px solid var(--border);}
+
+.empty-hint{color:var(--text-secondary);font-size:12px;padding:14px;text-align:center;}
+</style>
+</head>
+<body>
+<h3 id="t-title">PagedAttention 分块矩阵计算</h3>
+<p class="subtitle" id="t-subtitle">Query 向量与分散在不同逻辑块（非连续物理内存）的 K/V 做 Attention</p>
+
+<div class="top-row">
+  <!-- Left: GPU memory -->
+  <div class="panel">
+    <div class="panel-title" id="t-mem-title">物理内存布局</div>
+    <div class="phys-list">
+      <div id="pb0" class="phys-block b0">
+        <div class="pb-num" id="t-pb0-num">物理 Block 7 ← 逻辑 Block 0</div>
+        <div class="pb-toks">Four · score · and · seven</div>
+      </div>
+      <div id="pb1" class="phys-block b1">
+        <div class="pb-num" id="t-pb1-num">物理 Block 1 ← 逻辑 Block 1</div>
+        <div class="pb-toks">years · ago · our · fathers</div>
+      </div>
+      <div id="pb2" class="phys-block b2">
+        <div class="pb-num" id="t-pb2-num">物理 Block 3 ← 逻辑 Block 2</div>
+        <div class="pb-toks">brought · ◻ · ◻ · ◻</div>
+      </div>
+    </div>
+    <div class="query-tag" id="t-query">当前 token: "forth"</div>
+    <div class="addr-note" id="t-addr">逻辑 Block 0 → 物理 0x2800<br>逻辑 Block 1 → 物理 0x0400<br>逻辑 Block 2 → 物理 0x0C00</div>
+  </div>
+
+  <!-- Right: Steps -->
+  <div class="panel">
+    <div class="panel-title" id="t-steps-title">计算步骤</div>
+    <div id="steps-wrap">
+      <div class="step" id="s0" onclick="go(0)"><div class="step-num">1</div><div class="step-text" id="t-s0"><strong>线性变换</strong>："forth" → q<sub>j</sub>（via W<sub>Q</sub>）</div></div>
+      <div class="step" id="s1" onclick="go(1)"><div class="step-num">2</div><div class="step-text" id="t-s1"><strong>逻辑块 0</strong>（物理 Block 7）：q<sub>j</sub> · K<sub>0</sub> → A<sub>j,0</sub></div></div>
+      <div class="step" id="s2" onclick="go(2)"><div class="step-num">3</div><div class="step-text" id="t-s2"><strong>逻辑块 1</strong>（物理 Block 1）：q<sub>j</sub> · K<sub>1</sub> → A<sub>j,1</sub></div></div>
+      <div class="step" id="s3" onclick="go(3)"><div class="step-num">4</div><div class="step-text" id="t-s3"><strong>逻辑块 2</strong>（物理 Block 3）：q<sub>j</sub> · K<sub>2</sub> → A<sub>j,2</sub></div></div>
+      <div class="step" id="s4" onclick="go(4)"><div class="step-num">5</div><div class="step-text" id="t-s4"><strong>Softmax</strong>：跨所有逻辑块归一化</div></div>
+      <div class="step" id="s5" onclick="go(5)"><div class="step-num">6</div><div class="step-text" id="t-s5"><strong>加权求和</strong>：Σ w · V → 输出 o<sub>j</sub></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Matrix detail -->
+<div class="matrix-area">
+  <div class="matrix-title" id="t-mat-title">点击步骤查看矩阵计算细节</div>
+  <div class="matrix-wrap" id="mat-wrap"><div class="empty-hint" id="t-empty-hint">← 点击左侧步骤或"下一步"开始</div></div>
+</div>
+
+<div class="controls">
+  <button onclick="prev()" id="btn-prev">← 上一步</button>
+  <button class="primary" onclick="next()" id="btn-next">下一步 →</button>
+  <button onclick="reset()" id="btn-reset">重置</button>
+  <span class="status" id="status-txt">步骤 1 / 6</span>
+</div>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────
+const toks = {b0:['Four','score','and','seven'], b1:['years','ago','our','fathers'], b2:['brought']};
+const allToks = [...toks.b0, ...toks.b1, ...toks.b2]; // 9 context tokens
+const tokCls  = [...Array(4).fill('b0'), ...Array(4).fill('b1'), ...Array(1).fill('b2')];
+const raw = [0.15, 0.22, 0.08, 0.31, 0.14, 0.28, 0.42, 0.68, 0.51];
+function softmax(a){const e=a.map(x=>Math.exp(x));const s=e.reduce((a,b)=>a+b,0);return e.map(x=>x/s);}
+const soft = softmax(raw);
+
+// ── Lang ──────────────────────────────────────────────────────────
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+const TR={
+  zh:{
+    title:'PagedAttention 分块矩阵计算',
+    subtitle:'Query 向量与分散在不同逻辑块（非连续物理内存）的 K/V 做 Attention',
+    memTitle:'物理内存布局',stepsTitle:'计算步骤',
+    query:'当前 token: "forth"',
+    addr:'逻辑 Block 0 → 物理 0x2800\n逻辑 Block 1 → 物理 0x0400\n逻辑 Block 2 → 物理 0x0C00',
+    pb0:'物理 Block 7 ← 逻辑 Block 0',
+    pb1:'物理 Block 1 ← 逻辑 Block 1',
+    pb2:'物理 Block 3 ← 逻辑 Block 2',
+    steps:[
+      '<strong>线性变换</strong>："forth" → q<sub>j</sub>（via W<sub>Q</sub>）',
+      '<strong>逻辑块 0</strong>（物理 Block 7）：q<sub>j</sub> · K<sub>0</sub> → A<sub>j,0</sub>',
+      '<strong>逻辑块 1</strong>（物理 Block 1）：q<sub>j</sub> · K<sub>1</sub> → A<sub>j,1</sub>',
+      '<strong>逻辑块 2</strong>（物理 Block 3）：q<sub>j</sub> · K<sub>2</sub> → A<sub>j,2</sub>',
+      '<strong>Softmax</strong>：跨所有逻辑块归一化',
+      '<strong>加权求和</strong>：Σ w · V → 输出 o<sub>j</sub>'],
+    matTitles:[
+      '① "forth" 是当前新 token（位置 j），经 W_Q 线性变换得到 query 向量 q_j',
+      '② 逻辑块 0（物理 Block 7，存 4 个 key 向量）：q_j · K_0 → 4 个原始分数',
+      '③ 逻辑块 1（物理 Block 1，存 4 个 key 向量）：q_j · K_1 → 4 个原始分数',
+      '④ 逻辑块 2（物理 Block 3，存 1 个 key 向量）：q_j · K_2 → 1 个原始分数',
+      '⑤ Softmax：对全部 9 个 context token 的原始分数归一化',
+      '⑥ 加权求和：用归一化权重对各 token 的 V 向量加权求和 → 输出 o_j'],
+    rawScore:'原始分数',softmaxW:'Softmax 权重',
+    weight:'权重 w',vVec:'V 向量',
+    emptyHint:'← 点击左侧步骤或"下一步"开始',
+    btnPrev:'← 上一步',btnNext:'下一步 →',btnReset:'重置',
+    stepOf:(s,t)=>`步骤 ${s} / ${t}`,
+  },
+  en:{
+    title:'PagedAttention Block-wise Computation',
+    subtitle:'Query vector attends to K/V in non-contiguous logical blocks across GPU memory',
+    memTitle:'Physical Memory Layout',stepsTitle:'Computation Steps',
+    query:'Current token: "forth"',
+    addr:'Logical Block 0 → Phys 0x2800\nLogical Block 1 → Phys 0x0400\nLogical Block 2 → Phys 0x0C00',
+    pb0:'Phys Block 7 ← Logical Block 0',
+    pb1:'Phys Block 1 ← Logical Block 1',
+    pb2:'Phys Block 3 ← Logical Block 2',
+    steps:[
+      '<strong>Linear Transform</strong>: "forth" → q<sub>j</sub> (via W<sub>Q</sub>)',
+      '<strong>Logical Block 0</strong> (Phys Block 7): q<sub>j</sub> · K<sub>0</sub> → A<sub>j,0</sub>',
+      '<strong>Logical Block 1</strong> (Phys Block 1): q<sub>j</sub> · K<sub>1</sub> → A<sub>j,1</sub>',
+      '<strong>Logical Block 2</strong> (Phys Block 3): q<sub>j</sub> · K<sub>2</sub> → A<sub>j,2</sub>',
+      '<strong>Softmax</strong>: normalize across all logical blocks',
+      '<strong>Weighted Sum</strong>: Σ w · V → output o<sub>j</sub>'],
+    matTitles:[
+      '① "forth" is the current new token (position j); linear transform via W_Q → query vector q_j',
+      '② Logical Block 0 (Phys Block 7, stores 4 key vectors): q_j · K_0 → 4 raw scores',
+      '③ Logical Block 1 (Phys Block 1, stores 4 key vectors): q_j · K_1 → 4 raw scores',
+      '④ Logical Block 2 (Phys Block 3, stores 1 key vector): q_j · K_2 → 1 raw score',
+      '⑤ Softmax: normalize raw scores across all 9 context tokens',
+      '⑥ Weighted sum: apply normalized weights to V vectors → output o_j'],
+    rawScore:'Raw score',softmaxW:'Softmax weight',
+    weight:'Weight w',vVec:'V vector',
+    emptyHint:'← Click a step or "Next" to begin',
+    btnPrev:'← Prev',btnNext:'Next →',btnReset:'Reset',
+    stepOf:(s,t)=>`Step ${s} / ${t}`,
+  }
+};
+let T = TR.zh;
+
+// ── State ─────────────────────────────────────────────────────────
+let cur = -1;
+
+function renderMatrix(step){
+  const mw = document.getElementById('mat-wrap');
+  document.getElementById('t-mat-title').textContent = T.matTitles[step];
+  mw.innerHTML = '';
+
+  if(step===0){
+    // Step 1: "forth" → q_j via W_Q
+    mw.innerHTML=`
+      <div class="matrix"><table>
+        <tr><td class="hdr">token</td><td class="qc">"forth"</td></tr>
+        <tr><td class="hdr">pos j</td><td class="qc">9</td></tr>
+      </table></div>
+      <div class="op">× W<sub>Q</sub></div>
+      <div class="op">→</div>
+      <div class="matrix"><table>
+        <tr><td class="hdr">q<sub>j</sub></td><td class="qc">[0.42, −0.18, 0.73, …]</td></tr>
+        <tr><td class="hdr">dim</td><td class="qc">d = 4096</td></tr>
+      </table></div>`;
+
+  } else if(step>=1 && step<=3){
+    // Steps 2-4: q_j · K_b (block of B key vectors) → scores
+    const bi = step - 1;
+    const cls = ['b0','b1','b2'][bi];
+    const bt = [toks.b0, toks.b1, toks.b2][bi];
+    const pn = [7, 1, 3][bi];
+    const lbl = `${T.steps[step].replace(/<[^>]+>/g,'')}`;
+
+    const kRows = bt.map((t,i) =>
+      `<tr><td class="hdr">k<sub>${bi*4+i}</sub></td><td class="${cls}" style="font-size:9px">"${t}" [d=4096]</td></tr>`
+    ).join('');
+
+    const offset = bi * 4;
+    const sRows = bt.map((t,i) => {
+      const si = offset + i;
+      return `<tr><td class="hdr">s<sub>${si}</sub></td><td class="${cls}">${raw[si].toFixed(3)}</td></tr>`;
+    }).join('');
+
+    mw.innerHTML=`
+      <div>
+        <div style="font-size:9px;color:var(--text-secondary);margin-bottom:3px">q<sub>j</sub></div>
+        <div class="matrix"><table>
+          <tr><td class="hdr">q<sub>j</sub></td><td class="qc">[d=4096]</td></tr>
+        </table></div>
+      </div>
+      <div class="op">·</div>
+      <div>
+        <div style="font-size:9px;color:var(--text-secondary);margin-bottom:3px">K<sub>${bi}</sub> (物理 Block ${pn}, B=${bt.length} key 向量)</div>
+        <div class="matrix"><table>${kRows}</table></div>
+      </div>
+      <div class="op">→</div>
+      <div>
+        <div style="font-size:9px;color:var(--text-secondary);margin-bottom:3px">A<sub>j,${bi}</sub></div>
+        <div class="matrix"><table>${sRows}</table></div>
+      </div>`;
+
+  } else if(step===4){
+    // Step 5: horizontal softmax table — tokens as columns
+    const tokenRow = allToks.map((t,i) =>
+      `<td class="${tokCls[i]}">${t}</td>`).join('');
+    const rawRow = raw.map((s,i) =>
+      `<td class="${tokCls[i]}">${s.toFixed(3)}</td>`).join('');
+    const softRow = soft.map((s,i) =>
+      `<td class="res">${s.toFixed(3)}</td>`).join('');
+
+    mw.innerHTML=`<div class="htable-wrap"><div class="matrix"><table>
+      <tr><td class="hdr">Token</td>${tokenRow}</tr>
+      <tr><td class="hdr">${T.rawScore}</td>${rawRow}</tr>
+      <tr><td class="hdr">${T.softmaxW}</td>${softRow}</tr>
+    </table></div></div>`;
+
+  } else if(step===5){
+    // Step 6: horizontal weighted-sum table — tokens as columns
+    const tokenRow = allToks.map((t,i) =>
+      `<td class="${tokCls[i]}">${t}</td>`).join('');
+    const wRow = soft.map((s,i) =>
+      `<td class="${tokCls[i]}">${s.toFixed(3)}</td>`).join('');
+    const vRow = allToks.map((t,i) =>
+      `<td class="${tokCls[i]}" style="font-size:9px">[v<sub>${i}</sub>]</td>`).join('');
+
+    mw.innerHTML=`
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%">
+        <div class="htable-wrap" style="flex:1"><div class="matrix"><table>
+          <tr><td class="hdr">Token</td>${tokenRow}</tr>
+          <tr><td class="hdr">${T.weight}</td>${wRow}</tr>
+          <tr><td class="hdr">${T.vVec}</td>${vRow}</tr>
+        </table></div></div>
+        <div class="op">→</div>
+        <div class="matrix"><table>
+          <tr><td class="hdr">o<sub>j</sub></td><td class="res">Σ w·v</td></tr>
+        </table></div>
+      </div>`;
+  }
+}
+
+function updateHL(step){
+  for(let i=0;i<6;i++) document.getElementById('s'+i).classList.toggle('active',i===step);
+  ['pb0','pb1','pb2'].forEach((id,i)=>{
+    const el=document.getElementById(id);
+    el.classList.remove('active','dim');
+    if(step>=1&&step<=3){ if(step-1===i) el.classList.add('active'); else el.classList.add('dim'); }
+  });
+}
+
+function go(step){
+  cur=step;
+  renderMatrix(step);
+  updateHL(step);
+  document.getElementById('status-txt').textContent = T.stepOf(step+1,6);
+}
+function next(){if(cur<5)go(cur+1);}
+function prev(){if(cur>0)go(cur-1);}
+function reset(){
+  cur=-1;
+  for(let i=0;i<6;i++) document.getElementById('s'+i).classList.remove('active');
+  ['pb0','pb1','pb2'].forEach(id=>{const el=document.getElementById(id);el.classList.remove('active','dim');});
+  document.getElementById('mat-wrap').innerHTML=`<div class="empty-hint">${T.emptyHint}</div>`;
+  document.getElementById('t-mat-title').textContent = T.matTitles[0];
+  document.getElementById('status-txt').textContent = T.stepOf(1,6);
+}
+
+function applyLang(){
+  T = TR[getLang()];
+  document.getElementById('t-title').textContent=T.title;
+  document.getElementById('t-subtitle').textContent=T.subtitle;
+  document.getElementById('t-mem-title').textContent=T.memTitle;
+  document.getElementById('t-steps-title').textContent=T.stepsTitle;
+  document.getElementById('t-query').textContent=T.query;
+  document.getElementById('t-addr').innerHTML=T.addr.replace(/\n/g,'<br>');
+  document.getElementById('t-pb0-num').textContent=T.pb0;
+  document.getElementById('t-pb1-num').textContent=T.pb1;
+  document.getElementById('t-pb2-num').textContent=T.pb2;
+  for(let i=0;i<6;i++) document.getElementById('t-s'+i).innerHTML=T.steps[i];
+  document.getElementById('btn-prev').textContent=T.btnPrev;
+  document.getElementById('btn-next').textContent=T.btnNext;
+  document.getElementById('btn-reset').textContent=T.btnReset;
+  document.getElementById('t-empty-hint').textContent=T.emptyHint;
+}
+
+function syncTheme(){
+  try{const d=window.parent.document.body.classList.contains('dark')||window.parent.document.documentElement.classList.contains('dark');document.body.classList.toggle('dark',d);}catch(e){}
+}
+
+applyLang();
+reset();
+syncTheme();
+try{new MutationObserver(syncTheme).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['class']});}catch(e){}
+try{new MutationObserver(syncTheme).observe(window.parent.document.body,{attributes:true,attributeFilter:['class']});}catch(e){}
+</script>
+</body>
+</html>

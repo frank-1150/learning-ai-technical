@@ -129,7 +129,8 @@ function sidebar(): DefaultTheme.Sidebar {
             text: 'Inference & Hardware',
             collapsed: false,
             items: [
-              { text: 'NVIDIA Vera Rubin + LPX', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' }
+              { text: 'NVIDIA Vera Rubin + LPX', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' },
+              { text: 'vLLM & PagedAttention', link: '/machine-learning/inference/vllm-pagedattention' }
             ]
           }
         ]

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tensor Parallelism KV Cache</title>
+<style>
+:root{--bg:#fff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--text-secondary:#64748b;--accent:#3b82f6;--accent-light:#dbeafe;--green:#22c55e;--green-light:#dcfce7;--orange:#f97316;--orange-light:#ffedd5;--purple:#a855f7;--purple-light:#f3e8ff;--red:#ef4444;--red-light:#fee2e2;--yellow:#eab308;--yellow-light:#fef9c3;}
+body.dark{--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--text-secondary:#94a3b8;--accent:#60a5fa;--accent-light:#1e3a5f;--green:#4ade80;--green-light:#052e16;--orange:#fb923c;--orange-light:#431407;--purple:#c084fc;--purple-light:#2e1065;--red:#f87171;--red-light:#450a0a;--yellow:#facc15;--yellow-light:#422006;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:20px;font-size:13px;line-height:1.6;}
+h3{font-size:15px;font-weight:600;margin-bottom:5px;}
+.subtitle{font-size:12px;color:var(--text-secondary);margin-bottom:14px;}
+
+/* Scheduler */
+.scheduler{background:var(--surface);border:2px solid var(--accent);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:12px;}
+.sched-label{font-size:12px;font-weight:700;color:var(--accent);flex-shrink:0;}
+.sched-detail{font-size:11px;color:var(--text-secondary);}
+.sched-bt{display:inline-block;background:var(--accent-light);color:var(--accent);border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;}
+
+/* Input tokens row */
+.input-row{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.input-label{font-size:11px;font-weight:700;color:var(--text-secondary);flex-shrink:0;}
+.tok{border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;background:var(--accent-light);color:var(--accent);}
+.broadcast-arrow{font-size:11px;color:var(--text-secondary);margin:0 4px;}
+
+/* GPU cards grid */
+.gpu-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.gpu-card{border-radius:10px;border:2px solid transparent;padding:10px;transition:all .3s;}
+.gpu-card.gpu-0{background:var(--orange-light);border-color:var(--orange);}
+.gpu-card.gpu-1{background:var(--green-light);border-color:var(--green);}
+.gpu-card.gpu-2{background:var(--purple-light);border-color:var(--purple);}
+.gpu-card.gpu-3{background:var(--accent-light);border-color:var(--accent);}
+.gpu-title{font-size:11px;font-weight:700;margin-bottom:6px;}
+.gpu-0 .gpu-title{color:var(--orange);}
+.gpu-1 .gpu-title{color:var(--green);}
+.gpu-2 .gpu-title{color:var(--purple);}
+.gpu-3 .gpu-title{color:var(--accent);}
+
+.heads-label{font-size:10px;font-weight:600;color:var(--text-secondary);margin-bottom:3px;}
+.head-chips{display:flex;gap:2px;flex-wrap:wrap;}
+.head-chip{font-size:9px;padding:1px 4px;border-radius:3px;font-weight:700;}
+.gpu-0 .head-chip{background:var(--orange);color:#fff;}
+.gpu-1 .head-chip{background:var(--green);color:#fff;}
+.gpu-2 .head-chip{background:var(--purple);color:#fff;}
+.gpu-3 .head-chip{background:var(--accent);color:#fff;}
+
+.kv-label{font-size:10px;font-weight:600;color:var(--text-secondary);margin:5px 0 3px 0;}
+.kv-blocks{display:flex;gap:2px;flex-wrap:wrap;}
+.kv-block{font-size:9px;padding:2px 5px;border-radius:3px;font-weight:700;}
+.gpu-0 .kv-block{background:rgba(249,115,22,.25);color:var(--orange);border:1px solid var(--orange);}
+.gpu-1 .kv-block{background:rgba(34,197,94,.25);color:var(--green);border:1px solid var(--green);}
+.gpu-2 .kv-block{background:rgba(168,85,247,.25);color:var(--purple);border:1px solid var(--purple);}
+.gpu-3 .kv-block{background:rgba(59,130,246,.25);color:var(--accent);border:1px solid var(--accent);}
+
+.block-ids{font-size:9px;color:var(--text-secondary);margin-top:3px;}
+
+/* All-reduce arrow */
+.allreduce{text-align:center;margin:10px 0;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text-secondary);}
+.allreduce span{font-weight:700;color:var(--text);}
+
+/* Insights */
+.insights{margin-top:10px;display:flex;flex-direction:column;gap:6px;}
+.insight{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:12px;border-left:3px solid var(--accent);}
+.ins-q{font-weight:700;color:var(--text);margin-bottom:2px;}
+.ins-a{color:var(--text-secondary);}
+
+.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+.tab{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:12px;cursor:pointer;transition:all .2s;font-weight:500;}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+.view{display:none;}
+.view.active{display:block;}
+
+@media(max-width:600px){.gpu-grid{grid-template-columns:repeat(2,1fr);}}
+</style>
+</head>
+<body>
+<h3 id="t-title">分布式执行中的 KV Cache 管理</h3>
+<p class="subtitle" id="t-subtitle">Megatron-LM Style Tensor Parallelism：不同 GPU 处理不同 Attention Head，KV Cache 跟随 Head 存储在对应 GPU 上</p>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" id="tab-arch" onclick="switchTab('arch')"><span id="t-tab-arch">架构视图</span></div>
+  <div class="tab" id="tab-flow" onclick="switchTab('flow')"><span id="t-tab-flow">执行流程</span></div>
+  <div class="tab" id="tab-qa" onclick="switchTab('qa')"><span id="t-tab-qa">常见问题</span></div>
+</div>
+
+<!-- Architecture View -->
+<div class="view active" id="view-arch">
+  <!-- Scheduler -->
+  <div class="scheduler">
+    <div class="sched-label" id="t-sched-label">Scheduler</div>
+    <div class="sched-detail">
+      <span id="t-sched-detail">统一管理 Block Table（逻辑→物理映射），广播给所有 GPU Worker</span>
+      <span class="sched-bt" id="t-block-table">Block Table</span>
+    </div>
+  </div>
+
+  <!-- Input tokens broadcast -->
+  <div class="input-row">
+    <div class="input-label" id="t-input-label">Input Tokens（共同的）：</div>
+    <span class="tok">Four</span>
+    <span class="tok">score</span>
+    <span class="tok">and</span>
+    <span class="tok">seven</span>
+    <span class="tok">years</span>
+    <span class="tok">ago</span>
+    <span class="broadcast-arrow">→ broadcast to all GPUs →</span>
+    <span style="font-size:11px;color:var(--text-secondary);" id="t-broadcast-note">每个 GPU 收到完整 token 序列</span>
+  </div>
+
+  <!-- GPU cards -->
+  <div class="gpu-grid" id="gpu-grid"></div>
+
+  <!-- All-reduce -->
+  <div class="allreduce" id="t-allreduce">
+    <span>All-Reduce</span>（通过 NCCL）：各 GPU 同步 Attention 输出，合并成完整的输出向量
+  </div>
+</div>
+
+<!-- Flow View -->
+<div class="view" id="view-flow">
+  <div id="flow-steps"></div>
+</div>
+
+<!-- Q&A View -->
+<div class="view" id="view-qa">
+  <div class="insights" id="qa-content"></div>
+</div>
+
+<script>
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+
+const TR={
+  zh:{
+    title:'分布式执行中的 KV Cache 管理',
+    subtitle:'Megatron-LM Style Tensor Parallelism：不同 GPU 处理不同 Attention Head，KV Cache 跟随 Head 存储在对应 GPU 上',
+    tabArch:'架构视图',tabFlow:'执行流程',tabQA:'常见问题',
+    schedLabel:'Scheduler',
+    schedDetail:'统一管理 Block Table（逻辑→物理映射），广播给所有 GPU Worker',
+    blockTable:'Block Table',
+    inputLabel:'Input Tokens（共同的）：',
+    broadcastNote:'每个 GPU 收到完整 token 序列',
+    allreduce:'All-Reduce（通过 NCCL）：各 GPU 同步 Attention 输出，合并成完整的输出向量',
+    gpus:[
+      {title:'GPU 0',headsLabel:'负责的 Attention Heads：',heads:['H0','H1','H2','H3','H4','H5','H6','H7'],kvLabel:'存储的 KV Cache：',kvNote:'只存 H0-H7 的 K/V'},
+      {title:'GPU 1',headsLabel:'负责的 Attention Heads：',heads:['H8','H9','H10','H11','H12','H13','H14','H15'],kvLabel:'存储的 KV Cache：',kvNote:'只存 H8-H15 的 K/V'},
+      {title:'GPU 2',headsLabel:'负责的 Attention Heads：',heads:['H16','H17','H18','H19','H20','H21','H22','H23'],kvLabel:'存储的 KV Cache：',kvNote:'只存 H16-H23 的 K/V'},
+      {title:'GPU 3',headsLabel:'负责的 Attention Heads：',heads:['H24','H25','H26','H27','H28','H29','H30','H31'],kvLabel:'存储的 KV Cache：',kvNote:'只存 H24-H31 的 K/V'}
+    ],
+    physBlocks:['Block 7','Block 1','Block 3'],
+    flowSteps:[
+      {t:'① Scheduler 广播',d:'Scheduler 将 input token IDs 和统一的 Block Table 发送给所有 4 个 GPU Worker。\n\nBlock Table 中，逻辑 block → 物理 block 的映射对所有 GPU 一致（例如逻辑 block 0 → 物理 block 7）。'},
+      {t:'② 各 GPU 独立计算',d:'每个 GPU 只计算自己负责的 attention head 子集：\n\n• GPU 0 计算 head 0-7 的 Q、K、V 线性变换和 attention\n• GPU 1 计算 head 8-15\n• GPU 2 计算 head 16-23\n• GPU 3 计算 head 24-31\n\n各 GPU 根据 Block Table 从自己的 KV cache 中读取对应 head 的历史 K/V。'},
+      {t:'③ KV Cache 写入',d:'本次 decode 生成的新 token 的 K/V 向量，按 head 分别写入各 GPU 的物理 block：\n\n• GPU 0 的物理 block 7 中存入 head 0-7 的 K/V\n• GPU 1 的物理 block 7 中存入 head 8-15 的 K/V\n• 以此类推\n\n注意：虽然物理 block 编号相同（都是 7），但每个 GPU 上的实际数据只是该 GPU 负责的 head 的 K/V。'},
+      {t:'④ All-Reduce 同步',d:'Attention 层计算完成后，各 GPU 将各自的部分输出通过 NCCL all-reduce 操作相加，得到完整的 attention 输出。\n\nFFN 层同样使用类似的 tensor parallelism 和 all-reduce 同步。'},
+      {t:'⑤ 返回结果',d:'GPU Worker 将采样的新 token 发回给 Scheduler。\n\nScheduler 更新 Block Table（如果分配了新的物理 block），进入下一次 decoding iteration。\n\n整个过程中，GPU Worker 不需要同步内存管理信息，只在每次 iteration 开始时接收 Block Table。'}
+    ],
+    qa:[
+      {q:'Attention Head A 的 KV cache 存在哪个 GPU 上？',a:'存在处理 Head A 的那个 GPU 上。例如 Head 0-7 的 KV cache 全部存在 GPU 0 的显存中（Block Engine）。Head A 的 KV cache 不会出现在其他 GPU 上。'},
+      {q:'为什么 Input Tokens 需要广播给所有 GPU？',a:'因为计算 Q、K、V 线性变换需要完整的 input embeddings。虽然每个 GPU 只负责部分 head，但 Q 的计算 (x · W_Q) 需要完整的输入 x。所以 input token embeddings 对所有 GPU 都是共同的。'},
+      {q:'GPU 间需要同步 KV cache 吗？',a:'不需要！KV cache 完全是各 GPU 本地的，不跨 GPU 传输。GPU 间只在 All-Reduce 时同步 attention/FFN 的输出向量。这大大减少了通信量。'},
+      {q:'Swap out 时，多个 GPU 的 KV cache 如何处理？',a:'所有 GPU 同步换出（gang-scheduled）。Scheduler 选择换出某个序列后，所有 GPU worker 同时将该序列对应的 KV cache block 换出到各自的 CPU 内存。Block Table 统一更新。'},
+      {q:'统一 Block Table 的意义是什么？',a:'Block Table 存在 Scheduler 中，是唯一的。所有 GPU 共享相同的逻辑→物理映射（如逻辑 block 0 → 物理 block 7）。虽然每个 GPU 的物理 block 7 内容不同（各自存的 head 不同），但寻址方式完全统一，Scheduler 不需要管理多份映射表。'}
+    ]
+  },
+  en:{
+    title:'KV Cache Management in Distributed Execution',
+    subtitle:'Megatron-LM Style Tensor Parallelism: Different GPUs handle different Attention Heads, KV Cache is co-located with the corresponding head\'s GPU',
+    tabArch:'Architecture',tabFlow:'Execution Flow',tabQA:'FAQ',
+    schedLabel:'Scheduler',
+    schedDetail:'Centrally manages Block Table (logical→physical mapping), broadcasts to all GPU Workers',
+    blockTable:'Block Table',
+    inputLabel:'Input Tokens (shared by all GPUs):',
+    broadcastNote:'Each GPU receives full token sequence',
+    allreduce:'All-Reduce (via NCCL): GPUs synchronize partial Attention outputs to form the complete output vector',
+    gpus:[
+      {title:'GPU 0',headsLabel:'Attention Heads:',heads:['H0','H1','H2','H3','H4','H5','H6','H7'],kvLabel:'KV Cache stored:',kvNote:'Only K/V for H0-H7'},
+      {title:'GPU 1',headsLabel:'Attention Heads:',heads:['H8','H9','H10','H11','H12','H13','H14','H15'],kvLabel:'KV Cache stored:',kvNote:'Only K/V for H8-H15'},
+      {title:'GPU 2',headsLabel:'Attention Heads:',heads:['H16','H17','H18','H19','H20','H21','H22','H23'],kvLabel:'KV Cache stored:',kvNote:'Only K/V for H16-H23'},
+      {title:'GPU 3',headsLabel:'Attention Heads:',heads:['H24','H25','H26','H27','H28','H29','H30','H31'],kvLabel:'KV Cache stored:',kvNote:'Only K/V for H24-H31'}
+    ],
+    physBlocks:['Block 7','Block 1','Block 3'],
+    flowSteps:[
+      {t:'① Scheduler Broadcasts',d:'Scheduler sends input token IDs and the unified Block Table to all 4 GPU Workers.\n\nThe Block Table\'s logical→physical mapping is consistent across all GPUs (e.g., logical block 0 → physical block 7).'},
+      {t:'② Independent Computation',d:'Each GPU computes only its assigned attention head subset:\n\n• GPU 0: heads 0-7 (Q, K, V transforms + attention)\n• GPU 1: heads 8-15\n• GPU 2: heads 16-23\n• GPU 3: heads 24-31\n\nEach GPU reads historical K/V for its heads from its local KV cache according to the Block Table.'},
+      {t:'③ KV Cache Written',d:'The new token\'s K/V vectors are written to each GPU\'s physical blocks by head:\n\n• GPU 0\'s physical block 7 stores K/V for heads 0-7\n• GPU 1\'s physical block 7 stores K/V for heads 8-15\n• And so on\n\nNote: although the physical block number is the same (block 7), each GPU only stores K/V for its assigned heads.'},
+      {t:'④ All-Reduce Sync',d:'After the attention layer, GPUs sum their partial outputs via NCCL all-reduce to form the complete attention output.\n\nThe FFN layer similarly uses tensor parallelism with all-reduce synchronization.'},
+      {t:'⑤ Return Results',d:'GPU Workers send the sampled new token back to the Scheduler.\n\nScheduler updates the Block Table (if new physical blocks were allocated) and starts the next decoding iteration.\n\nGPU Workers never need to synchronize memory management — they only receive the Block Table at the start of each iteration.'}
+    ],
+    qa:[
+      {q:'Which GPU stores Head A\'s KV cache?',a:'The GPU that processes Head A. For example, KV cache for Heads 0-7 is entirely in GPU 0\'s DRAM (Block Engine). Head A\'s KV cache never appears on other GPUs.'},
+      {q:'Why do input tokens need to be broadcast to all GPUs?',a:'Because computing the Q, K, V linear transforms requires the full input embeddings. Even though each GPU only handles some heads, computing Q = x · W_Q requires the full input x. So input token embeddings are shared across all GPUs.'},
+      {q:'Do GPUs need to synchronize KV caches?',a:'No! KV caches are entirely local to each GPU — no cross-GPU transfer. GPUs only communicate during All-Reduce to sync attention/FFN output vectors. This dramatically reduces communication overhead.'},
+      {q:'How does swap-out work across multiple GPUs?',a:'All GPUs swap out synchronously (gang-scheduled). When Scheduler selects a sequence for preemption, all GPU workers simultaneously swap out that sequence\'s KV cache blocks to their respective CPU memory. Block Table is updated centrally.'},
+      {q:'What is the significance of the unified Block Table?',a:'The Block Table lives in the Scheduler and is the single source of truth. All GPUs share the same logical→physical mapping (e.g., logical block 0 → physical block 7). Although each GPU\'s physical block 7 contains different data (different heads), the addressing is completely unified — the Scheduler manages just one mapping table.'}
+    ]
+  }
+};
+
+let currentTab = 'arch';
+let lang = 'zh';
+let T = TR.zh;
+
+function renderArch() {
+  const grid = document.getElementById('gpu-grid');
+  const cls = ['gpu-0','gpu-1','gpu-2','gpu-3'];
+  grid.innerHTML = T.gpus.map((g,i) => {
+    const heads = g.heads.map(h => `<span class="head-chip">${h}</span>`).join('');
+    const blocks = T.physBlocks.map(b => `<span class="kv-block">${b}</span>`).join('');
+    return `<div class="gpu-card ${cls[i]}">
+      <div class="gpu-title">${g.title}</div>
+      <div class="heads-label">${g.headsLabel}</div>
+      <div class="head-chips">${heads}</div>
+      <div class="kv-label">${g.kvLabel}</div>
+      <div class="kv-blocks">${blocks}</div>
+      <div class="block-ids">${g.kvNote}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderFlow() {
+  const container = document.getElementById('flow-steps');
+  container.innerHTML = T.flowSteps.map((s,i) => `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;border-left:3px solid var(--accent);">
+      <div style="font-weight:700;color:var(--accent);margin-bottom:4px;">${s.t}</div>
+      <div style="font-size:12px;color:var(--text);">${s.d.replace(/\n/g,'<br>')}</div>
+    </div>
+  `).join('');
+}
+
+function renderQA() {
+  const container = document.getElementById('qa-content');
+  container.innerHTML = T.qa.map(q => `
+    <div class="insight">
+      <div class="ins-q">❓ ${q.q}</div>
+      <div class="ins-a">✅ ${q.a}</div>
+    </div>
+  `).join('');
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  ['arch','flow','qa'].forEach(t => {
+    document.getElementById('tab-'+t).classList.toggle('active', t===tab);
+    document.getElementById('view-'+t).classList.toggle('active', t===tab);
+  });
+}
+
+function applyLang() {
+  lang = getLang(); T = TR[lang];
+  document.getElementById('t-title').textContent = T.title;
+  document.getElementById('t-subtitle').textContent = T.subtitle;
+  document.getElementById('t-tab-arch').textContent = T.tabArch;
+  document.getElementById('t-tab-flow').textContent = T.tabFlow;
+  document.getElementById('t-tab-qa').textContent = T.tabQA;
+  document.getElementById('t-sched-label').textContent = T.schedLabel;
+  document.getElementById('t-sched-detail').textContent = T.schedDetail;
+  document.getElementById('t-block-table').textContent = T.blockTable;
+  document.getElementById('t-input-label').textContent = T.inputLabel;
+  document.getElementById('t-broadcast-note').textContent = T.broadcastNote;
+  document.getElementById('t-allreduce').innerHTML = `<span>All-Reduce</span>${T.allreduce.replace('All-Reduce','').replace(/（|）/g,m=>m==='（'?'(':')').replace(/\(通过 NCCL\)/,'(NCCL)')}`;
+  document.getElementById('t-allreduce').textContent = T.allreduce;
+  renderArch();
+  renderFlow();
+  renderQA();
+}
+
+function syncTheme() {
+  try { const d=window.parent.document.body.classList.contains('dark')||window.parent.document.documentElement.classList.contains('dark'); document.body.classList.toggle('dark',d); } catch(e) {}
+}
+
+applyLang();
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['class']}); } catch(e) {}
+try { new MutationObserver(syncTheme).observe(window.parent.document.body,{attributes:true,attributeFilter:['class']}); } catch(e) {}
+</script>
+</body>
+</html>

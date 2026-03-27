@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KV Cache Block Table</title>
+<style>
+:root {
+  --bg:#fff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--text-secondary:#64748b;
+  --accent:#3b82f6;--accent-light:#dbeafe;--green:#22c55e;--green-light:#dcfce7;
+  --orange:#f97316;--orange-light:#ffedd5;--purple:#a855f7;--purple-light:#f3e8ff;
+  --red:#ef4444;--red-light:#fee2e2;--yellow:#eab308;--yellow-light:#fef9c3;
+}
+body.dark{--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--text-secondary:#94a3b8;--accent:#60a5fa;--accent-light:#1e3a5f;--green:#4ade80;--green-light:#052e16;--orange:#fb923c;--orange-light:#431407;--purple:#c084fc;--purple-light:#2e1065;--red:#f87171;--red-light:#450a0a;--yellow:#facc15;--yellow-light:#422006;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:20px;font-size:14px;line-height:1.6;}
+h3{font-size:15px;font-weight:600;margin-bottom:6px;}
+.subtitle{font-size:12px;color:var(--text-secondary);margin-bottom:16px;}
+.layout{display:grid;grid-template-columns:1fr 160px 1fr;gap:12px;align-items:start;}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;}
+.panel-title{font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
+
+/* Logical blocks */
+.logical-block{display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:6px 8px;border-radius:7px;border:2px solid transparent;transition:all .3s;}
+.lb-num{font-size:11px;font-weight:700;color:var(--text-secondary);width:52px;flex-shrink:0;}
+.lb-tokens{display:flex;gap:3px;flex-wrap:wrap;}
+.token{border-radius:4px;padding:2px 6px;font-size:10px;font-weight:600;white-space:nowrap;}
+.tok-b0{background:var(--orange-light);color:var(--orange);}
+.tok-b1{background:var(--green-light);color:var(--green);}
+.tok-b2{background:var(--purple-light);color:var(--purple);}
+.tok-b3{background:var(--accent-light);color:var(--accent);}
+.tok-empty{background:var(--border);color:var(--text-secondary);}
+
+/* Block table */
+.bt-table{width:100%;border-collapse:collapse;font-size:11px;}
+.bt-table th{background:var(--surface);color:var(--text-secondary);font-weight:700;font-size:10px;padding:5px 6px;border:1px solid var(--border);text-align:center;}
+.bt-table td{padding:5px 6px;border:1px solid var(--border);text-align:center;font-weight:600;transition:all .3s;}
+.bt-row-b0 td.phys{background:var(--orange-light);color:var(--orange);}
+.bt-row-b1 td.phys{background:var(--green-light);color:var(--green);}
+.bt-row-b2 td.phys{background:var(--purple-light);color:var(--purple);}
+.bt-row-b3 td.phys{background:var(--accent-light);color:var(--accent);}
+.bt-row-null td.phys{background:var(--surface);color:var(--text-secondary);}
+.bt-table td.filled{font-size:10px;color:var(--text-secondary);}
+.bt-table td.lbl{color:var(--text-secondary);font-size:10px;}
+
+/* Physical blocks */
+.phys-grid{display:flex;flex-direction:column;gap:6px;}
+.phys-block{border-radius:7px;padding:6px 8px;border:2px solid transparent;transition:all .3s;}
+.pb-b0{background:var(--orange-light);border-color:var(--orange);color:var(--orange);}
+.pb-b1{background:var(--green-light);border-color:var(--green);color:var(--green);}
+.pb-b2{background:var(--purple-light);border-color:var(--purple);color:var(--purple);}
+.pb-b3{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+.pb-free{background:var(--surface);border-color:var(--border);color:var(--text-secondary);}
+.pb-header{font-size:10px;font-weight:700;margin-bottom:3px;}
+.pb-tokens{display:flex;gap:2px;flex-wrap:wrap;}
+.pb-tok{font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(255,255,255,.5);font-weight:600;}
+
+/* Highlight */
+.highlight{box-shadow:0 0 0 3px var(--accent);background:var(--accent-light)!important;border-color:var(--accent)!important;}
+
+/* Arrow area */
+.arrow-area{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;}
+.arrow-row{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-secondary);}
+.arr-svg{width:40px;height:20px;}
+
+/* Controls */
+.controls{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap;}
+button{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;transition:all .2s;font-weight:500;}
+button:hover{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+button.primary:hover{opacity:.88;}
+.status{font-size:12px;color:var(--text-secondary);padding:4px 10px;background:var(--surface);border-radius:20px;border:1px solid var(--border);}
+
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:11px;}
+.leg-item{display:flex;align-items:center;gap:4px;}
+.leg-dot{width:10px;height:10px;border-radius:3px;}
+
+.step-desc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--text);min-height:44px;border-left:3px solid var(--accent);}
+
+@media(max-width:640px){.layout{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<h3 id="t-title">KV Cache Block Table：逻辑 Block → 物理 Block 映射</h3>
+<p class="subtitle" id="t-subtitle">类比操作系统页表，vLLM 通过 Block Table 将序列的逻辑 block 动态映射到 GPU 上任意位置的物理 block</p>
+
+<div class="layout">
+  <!-- Logical blocks -->
+  <div class="panel">
+    <div class="panel-title" id="t-logical-title">逻辑 KV Blocks（序列视角）</div>
+    <div id="logical-blocks"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <!-- Arrow + Block Table -->
+  <div class="panel">
+    <div class="panel-title" id="t-bt-title">Block Table</div>
+    <table class="bt-table" id="block-table">
+      <thead><tr>
+        <th id="t-th-logical">逻辑</th>
+        <th id="t-th-phys">物理</th>
+        <th id="t-th-filled">已填充</th>
+      </tr></thead>
+      <tbody id="bt-body"></tbody>
+    </table>
+    <div class="step-desc" id="step-desc"></div>
+  </div>
+
+  <!-- Physical blocks -->
+  <div class="panel">
+    <div class="panel-title" id="t-phys-title">物理 KV Blocks（GPU 显存）</div>
+    <div class="phys-grid" id="phys-blocks"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button onclick="prevStep()" id="btn-prev">← 上一步</button>
+  <button class="primary" onclick="nextStep()" id="btn-next">下一步 →</button>
+  <button onclick="resetAll()" id="btn-reset">重置</button>
+  <span class="status" id="step-status">步骤 1 / 5</span>
+</div>
+
+<script>
+// ── Translations ──────────────────────────────────────────────
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+const TR={
+  zh:{
+    title:'KV Cache Block Table：逻辑 Block → 物理 Block 映射',
+    subtitle:'类比操作系统页表，vLLM 通过 Block Table 将序列的逻辑 block 动态映射到 GPU 上任意位置的物理 block',
+    logicalTitle:'逻辑 KV Blocks（序列视角）',
+    btTitle:'Block Table',
+    physTitle:'物理 KV Blocks（GPU 显存）',
+    thLogical:'逻辑',thPhys:'物理',thFilled:'已填充',
+    btnPrev:'← 上一步',btnNext:'下一步 →',btnReset:'重置',
+    stepStatus:(s,t)=>`步骤 ${s} / ${t}`,
+    freeLabel:'空闲块',usedLabel:'已使用',
+    steps:[
+      'Prompt "Four score and seven years ago our fathers" 共 9 个 token，prefill 阶段开始。vLLM 分配 3 个逻辑 block（0、1、2）。',
+      '逻辑 block 0 映射到物理 block 7，存储前 4 个 token（Four·score·and·seven），填满。',
+      '逻辑 block 1 映射到物理 block 1，存储后 4 个 token（years·ago·our·fathers），填满。',
+      '逻辑 block 2 映射到物理 block 3，存储 1 个 token（brought），剩余 3 个 slot 预留但不立即分配。',
+      '第一次 decode：生成新 token "forth"。block 2 还有空间，直接写入，填充数 1→2。下次 block 填满后才会分配新的物理 block。'
+    ]
+  },
+  en:{
+    title:'KV Cache Block Table: Logical → Physical Block Mapping',
+    subtitle:'Analogous to OS page tables, vLLM dynamically maps logical blocks to any physical block in GPU memory via Block Table',
+    logicalTitle:'Logical KV Blocks (sequence view)',
+    btTitle:'Block Table',
+    physTitle:'Physical KV Blocks (GPU DRAM)',
+    thLogical:'Logical',thPhys:'Physical',thFilled:'Filled',
+    btnPrev:'← Prev',btnNext:'Next →',btnReset:'Reset',
+    stepStatus:(s,t)=>`Step ${s} / ${t}`,
+    freeLabel:'Free block',usedLabel:'Used',
+    steps:[
+      'Prompt "Four score and seven years ago our fathers" has 9 tokens. Prefill begins. vLLM allocates 3 logical blocks (0, 1, 2).',
+      'Logical block 0 → Physical block 7: stores first 4 tokens (Four·score·and·seven). Full.',
+      'Logical block 1 → Physical block 1: stores next 4 tokens (years·ago·our·fathers). Full.',
+      'Logical block 2 → Physical block 3: stores 1 token (brought). 3 slots reserved but NOT pre-allocated — no waste!',
+      'First decode: new token "forth" generated. Block 2 has space, written directly. Fill count 1→2. New physical block only allocated when this one fills up.'
+    ]
+  }
+};
+
+// State per step: [logicalBlocks, blockTable, physicalBlocks]
+// logicalBlocks: [{label, tokens:[], cls}]
+// blockTable: [{logical, physical, filled, cls}]
+// physicalBlocks: [{num, tokens:[], cls}]  + free blocks
+
+const STEPS_DATA = [
+  // Step 0: just prompt, before allocation
+  {
+    logical:[
+      {label:'Block 0',tokens:['Four','score','and','seven'],cls:'tok-b0'},
+      {label:'Block 1',tokens:['years','ago','our','fathers'],cls:'tok-b1'},
+      {label:'Block 2',tokens:['brought'],cls:'tok-b2'}
+    ],
+    bt:[
+      {logical:0,physical:'?',filled:'0/4',cls:'bt-row-null'},
+      {logical:1,physical:'?',filled:'0/4',cls:'bt-row-null'},
+      {logical:2,physical:'?',filled:'0/4',cls:'bt-row-null'}
+    ],
+    phys:[
+      {num:0,tokens:[],cls:'pb-free'},
+      {num:1,tokens:[],cls:'pb-free'},
+      {num:2,tokens:[],cls:'pb-free'},
+      {num:3,tokens:[],cls:'pb-free'},
+      {num:4,tokens:[],cls:'pb-free'},
+      {num:5,tokens:[],cls:'pb-free'},
+      {num:6,tokens:[],cls:'pb-free'},
+      {num:7,tokens:[],cls:'pb-free'},
+      {num:8,tokens:[],cls:'pb-free'},
+    ],
+    highlight:{logical:[0,1,2],bt:[],phys:[]}
+  },
+  // Step 1: block 0 allocated to phys 7
+  {
+    logical:[
+      {label:'Block 0',tokens:['Four','score','and','seven'],cls:'tok-b0'},
+      {label:'Block 1',tokens:['years','ago','our','fathers'],cls:'tok-b1'},
+      {label:'Block 2',tokens:['brought'],cls:'tok-b2'}
+    ],
+    bt:[
+      {logical:0,physical:7,filled:'4/4',cls:'bt-row-b0'},
+      {logical:1,physical:'?',filled:'0/4',cls:'bt-row-null'},
+      {logical:2,physical:'?',filled:'0/4',cls:'bt-row-null'}
+    ],
+    phys:[
+      {num:0,tokens:[],cls:'pb-free'},{num:1,tokens:[],cls:'pb-free'},
+      {num:2,tokens:[],cls:'pb-free'},{num:3,tokens:[],cls:'pb-free'},
+      {num:4,tokens:[],cls:'pb-free'},{num:5,tokens:[],cls:'pb-free'},
+      {num:6,tokens:[],cls:'pb-free'},
+      {num:7,tokens:['Four','score','and','seven'],cls:'pb-b0'},
+      {num:8,tokens:[],cls:'pb-free'},
+    ],
+    highlight:{logical:[0],bt:[0],phys:[7]}
+  },
+  // Step 2: block 1 allocated to phys 1
+  {
+    logical:[
+      {label:'Block 0',tokens:['Four','score','and','seven'],cls:'tok-b0'},
+      {label:'Block 1',tokens:['years','ago','our','fathers'],cls:'tok-b1'},
+      {label:'Block 2',tokens:['brought'],cls:'tok-b2'}
+    ],
+    bt:[
+      {logical:0,physical:7,filled:'4/4',cls:'bt-row-b0'},
+      {logical:1,physical:1,filled:'4/4',cls:'bt-row-b1'},
+      {logical:2,physical:'?',filled:'0/4',cls:'bt-row-null'}
+    ],
+    phys:[
+      {num:0,tokens:[],cls:'pb-free'},
+      {num:1,tokens:['years','ago','our','fathers'],cls:'pb-b1'},
+      {num:2,tokens:[],cls:'pb-free'},{num:3,tokens:[],cls:'pb-free'},
+      {num:4,tokens:[],cls:'pb-free'},{num:5,tokens:[],cls:'pb-free'},
+      {num:6,tokens:[],cls:'pb-free'},
+      {num:7,tokens:['Four','score','and','seven'],cls:'pb-b0'},
+      {num:8,tokens:[],cls:'pb-free'},
+    ],
+    highlight:{logical:[1],bt:[1],phys:[1]}
+  },
+  // Step 3: block 2 allocated to phys 3, 1 token
+  {
+    logical:[
+      {label:'Block 0',tokens:['Four','score','and','seven'],cls:'tok-b0'},
+      {label:'Block 1',tokens:['years','ago','our','fathers'],cls:'tok-b1'},
+      {label:'Block 2',tokens:['brought','◻','◻','◻'],cls:'tok-b2'}
+    ],
+    bt:[
+      {logical:0,physical:7,filled:'4/4',cls:'bt-row-b0'},
+      {logical:1,physical:1,filled:'4/4',cls:'bt-row-b1'},
+      {logical:2,physical:3,filled:'1/4',cls:'bt-row-b2'}
+    ],
+    phys:[
+      {num:0,tokens:[],cls:'pb-free'},
+      {num:1,tokens:['years','ago','our','fathers'],cls:'pb-b1'},
+      {num:2,tokens:[],cls:'pb-free'},
+      {num:3,tokens:['brought','◻','◻','◻'],cls:'pb-b2'},
+      {num:4,tokens:[],cls:'pb-free'},{num:5,tokens:[],cls:'pb-free'},
+      {num:6,tokens:[],cls:'pb-free'},
+      {num:7,tokens:['Four','score','and','seven'],cls:'pb-b0'},
+      {num:8,tokens:[],cls:'pb-free'},
+    ],
+    highlight:{logical:[2],bt:[2],phys:[3]}
+  },
+  // Step 4: decode, "forth" added to block 2
+  {
+    logical:[
+      {label:'Block 0',tokens:['Four','score','and','seven'],cls:'tok-b0'},
+      {label:'Block 1',tokens:['years','ago','our','fathers'],cls:'tok-b1'},
+      {label:'Block 2',tokens:['brought','forth','◻','◻'],cls:'tok-b2'}
+    ],
+    bt:[
+      {logical:0,physical:7,filled:'4/4',cls:'bt-row-b0'},
+      {logical:1,physical:1,filled:'4/4',cls:'bt-row-b1'},
+      {logical:2,physical:3,filled:'2/4',cls:'bt-row-b2'}
+    ],
+    phys:[
+      {num:0,tokens:[],cls:'pb-free'},
+      {num:1,tokens:['years','ago','our','fathers'],cls:'pb-b1'},
+      {num:2,tokens:[],cls:'pb-free'},
+      {num:3,tokens:['brought','forth','◻','◻'],cls:'pb-b2'},
+      {num:4,tokens:[],cls:'pb-free'},{num:5,tokens:[],cls:'pb-free'},
+      {num:6,tokens:[],cls:'pb-free'},
+      {num:7,tokens:['Four','score','and','seven'],cls:'pb-b0'},
+      {num:8,tokens:[],cls:'pb-free'},
+    ],
+    highlight:{logical:[2],bt:[2],phys:[3]}
+  }
+];
+
+let currentStep = -1;
+const totalSteps = 5;
+let lang = 'zh';
+let T = TR.zh;
+
+function render(step) {
+  const d = STEPS_DATA[step];
+  // Logical blocks
+  const lb = document.getElementById('logical-blocks');
+  lb.innerHTML = d.logical.map((b,i) => {
+    const hl = d.highlight.logical.includes(i) ? ' highlight' : '';
+    const toks = b.tokens.map(t => {
+      const ec = t === '◻' ? 'tok-empty' : b.cls;
+      return `<span class="token ${ec}">${t}</span>`;
+    }).join('');
+    return `<div class="logical-block${hl}"><span class="lb-num">${b.label}</span><div class="lb-tokens">${toks}</div></div>`;
+  }).join('');
+
+  // Block table
+  const btBody = document.getElementById('bt-body');
+  btBody.innerHTML = d.bt.map((row, i) => {
+    const hl = d.highlight.bt.includes(i) ? ' class="highlight"' : '';
+    return `<tr class="${row.cls}"${hl}>
+      <td class="lbl">${row.logical}</td>
+      <td class="phys">${row.physical}</td>
+      <td class="filled">${row.filled}</td>
+    </tr>`;
+  }).join('');
+
+  // Physical blocks
+  const pg = document.getElementById('phys-blocks');
+  pg.innerHTML = d.phys.map((b, i) => {
+    const hl = d.highlight.phys.includes(b.num) ? ' highlight' : '';
+    const toks = b.tokens.map(t => {
+      const ec = t === '◻' ? 'pb-empty' : '';
+      return `<span class="pb-tok ${ec}" style="${t==='◻'?'opacity:.4':''}">  ${t}</span>`;
+    }).join('');
+    const freeLabel = lang === 'en' ? 'free' : '空闲';
+    return `<div class="phys-block ${b.cls}${hl}">
+      <div class="pb-header">Block ${b.num}${b.cls==='pb-free'?' ('+freeLabel+')':''}</div>
+      ${b.tokens.length > 0 ? `<div class="pb-tokens">${toks}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // Step desc
+  document.getElementById('step-desc').textContent = T.steps[step];
+  document.getElementById('step-status').textContent = T.stepStatus(step+1, totalSteps);
+}
+
+function goToStep(s) { currentStep = s; render(s); }
+function nextStep() { if(currentStep < totalSteps-1) goToStep(currentStep+1); }
+function prevStep() { if(currentStep > 0) goToStep(currentStep-1); }
+function resetAll() {
+  currentStep = 0;
+  render(0);
+}
+
+function applyLang() {
+  lang = getLang(); T = TR[lang];
+  document.getElementById('t-title').textContent = T.title;
+  document.getElementById('t-subtitle').textContent = T.subtitle;
+  document.getElementById('t-logical-title').textContent = T.logicalTitle;
+  document.getElementById('t-bt-title').textContent = T.btTitle;
+  document.getElementById('t-phys-title').textContent = T.physTitle;
+  document.getElementById('t-th-logical').textContent = T.thLogical;
+  document.getElementById('t-th-phys').textContent = T.thPhys;
+  document.getElementById('t-th-filled').textContent = T.thFilled;
+  document.getElementById('btn-prev').textContent = T.btnPrev;
+  document.getElementById('btn-next').textContent = T.btnNext;
+  document.getElementById('btn-reset').textContent = T.btnReset;
+}
+
+function syncTheme() {
+  try {
+    const d = window.parent.document.body.classList.contains('dark') || window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('dark', d);
+  } catch(e) {}
+}
+
+// Init
+applyLang();
+resetAll();
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, {attributes:true,attributeFilter:['class']}); } catch(e) {}
+try { new MutationObserver(syncTheme).observe(window.parent.document.body, {attributes:true,attributeFilter:['class']}); } catch(e) {}
+</script>
+</body>
+</html>

@@ -135,7 +135,8 @@ function sidebar(): DefaultTheme.Sidebar {
             text: '推理优化与硬件',
             collapsed: false,
             items: [
-              { text: 'NVIDIA Vera Rubin + LPX', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' }
+              { text: 'NVIDIA Vera Rubin + LPX', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' },
+              { text: 'vLLM 与 PagedAttention', link: '/zh/machine-learning/inference/vllm-pagedattention' }
             ]
           },
           {
