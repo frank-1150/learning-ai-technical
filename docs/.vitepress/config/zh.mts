@@ -73,7 +73,8 @@ function sidebar(): DefaultTheme.Sidebar {
             collapsed: false,
             items: [
               { text: '介绍', link: '/zh/ai-applications/agents/' },
-              { text: '智能体的核心：两个循环', link: '/zh/ai-applications/agents/agent-loop' }
+              { text: '智能体的核心：两个循环', link: '/zh/ai-applications/agents/agent-loop' },
+              { text: 'OpenViking：用文件系统重新定义 Agent 的记忆与检索', link: '/zh/ai-applications/agents/openviking' }
             ]
           },
           {

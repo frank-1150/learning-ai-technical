@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "docs:preview"],
       "port": 4173,
       "autoPort": true
+    },
+    {
+      "name": "VitePress Dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "docs:dev"],
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }
