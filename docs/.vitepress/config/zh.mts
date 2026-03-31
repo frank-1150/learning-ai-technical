@@ -137,7 +137,8 @@ function sidebar(): DefaultTheme.Sidebar {
             collapsed: false,
             items: [
               { text: 'NVIDIA Vera Rubin + LPX', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' },
-              { text: 'vLLM 与 PagedAttention', link: '/zh/machine-learning/inference/vllm-pagedattention' }
+              { text: 'vLLM 与 PagedAttention', link: '/zh/machine-learning/inference/vllm-pagedattention' },
+              { text: 'vLLM 源码拆解', link: '/zh/machine-learning/inference/vllm-codebase' }
             ]
           },
           {

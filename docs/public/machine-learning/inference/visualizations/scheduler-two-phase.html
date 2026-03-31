@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vLLM Scheduler Two-Phase Scheduling</title>
+<style>
+:root{--bg:#fff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--text-secondary:#64748b;--accent:#3b82f6;--accent-light:#dbeafe;--green:#22c55e;--green-light:#dcfce7;--orange:#f97316;--orange-light:#ffedd5;--purple:#a855f7;--purple-light:#f3e8ff;--red:#ef4444;--red-light:#fee2e2;--yellow:#eab308;--yellow-light:#fef9c3;}
+body.dark{--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--text-secondary:#94a3b8;--accent:#60a5fa;--accent-light:#1e3a5f;--green:#4ade80;--green-light:#052e16;--orange:#fb923c;--orange-light:#431407;--purple:#c084fc;--purple-light:#2e1065;--red:#f87171;--red-light:#450a0a;--yellow:#facc15;--yellow-light:#422006;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:20px;font-size:13px;line-height:1.6;}
+h3{font-size:15px;font-weight:600;margin-bottom:5px;}
+.subtitle{font-size:12px;color:var(--text-secondary);margin-bottom:14px;}
+
+/* Queue sections */
+.queue-section{margin-bottom:12px;}
+.queue-header{font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.queue-header .phase-tag{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--accent);color:#fff;font-weight:600;}
+.queue-header .phase-tag.phase2{background:var(--purple);}
+.queue-cards{display:flex;gap:8px;min-height:56px;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;flex-wrap:wrap;align-items:center;}
+.req-card{padding:6px 10px;border-radius:6px;font-size:11px;font-weight:600;border:2px solid transparent;transition:all .4s ease;min-width:80px;text-align:center;line-height:1.4;}
+.req-card .req-id{font-size:13px;font-weight:700;}
+.req-card .req-detail{font-size:9px;font-weight:500;opacity:.85;}
+.req-card.card-a{background:var(--orange-light);color:var(--orange);border-color:var(--orange);}
+.req-card.card-b{background:var(--green-light);color:var(--green);border-color:var(--green);}
+.req-card.card-c{background:var(--purple-light);color:var(--purple);border-color:var(--purple);}
+.req-card.card-d{background:var(--accent-light);color:var(--accent);border-color:var(--accent);}
+.req-card.card-e{background:var(--yellow-light);color:var(--yellow);border-color:var(--yellow);}
+.req-card.highlight{box-shadow:0 0 0 3px rgba(59,130,246,.4);transform:scale(1.05);}
+.req-card.dimmed{opacity:.4;}
+.req-card.scheduled{border-style:solid;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);}
+.req-card.blocked{border-style:dashed;border-color:var(--red);opacity:.7;}
+.empty-hint{font-size:11px;color:var(--text-secondary);font-style:italic;padding:4px;}
+
+/* Bottom panels */
+.bottom-panels{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;flex:1;min-width:180px;}
+.panel-label{font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:6px;}
+
+/* Token budget gauge */
+.gauge-bar-wrap{height:20px;background:var(--border);border-radius:4px;overflow:hidden;position:relative;}
+.gauge-bar{height:100%;border-radius:4px;transition:width .6s ease;background:var(--accent);}
+.gauge-bar.warn{background:var(--orange);}
+.gauge-bar.full{background:var(--red);}
+.gauge-val{font-size:11px;font-weight:700;margin-top:3px;}
+
+/* Block pool grid */
+.block-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;}
+.block-cell{width:100%;aspect-ratio:1;border-radius:3px;transition:all .4s ease;border:1px solid var(--border);}
+.block-cell.free{background:var(--surface);}
+.block-cell.alloc-a{background:var(--orange-light);border-color:var(--orange);}
+.block-cell.alloc-b{background:var(--green-light);border-color:var(--green);}
+.block-cell.alloc-c{background:var(--purple-light);border-color:var(--purple);}
+.block-cell.alloc-d{background:var(--accent-light);border-color:var(--accent);}
+.block-cell.alloc-new{background:var(--accent-light);border-color:var(--accent);box-shadow:0 0 4px var(--accent);}
+.block-pool-summary{font-size:11px;font-weight:700;margin-top:5px;}
+
+/* Scheduler output */
+.sched-output{margin-top:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:none;}
+.sched-output.visible{display:block;}
+.sched-output-label{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:4px;}
+.sched-output-items{display:flex;gap:6px;flex-wrap:wrap;}
+.sched-item{font-size:11px;padding:3px 8px;border-radius:4px;font-weight:600;}
+
+/* Step description */
+.step-desc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:var(--text);border-left:3px solid var(--accent);min-height:54px;}
+.step-title{font-weight:700;color:var(--accent);margin-bottom:3px;}
+
+/* Controls */
+.controls{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap;}
+button{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;transition:all .2s;font-weight:500;}
+button:hover{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+button.primary:hover{opacity:.88;}
+.status{font-size:12px;color:var(--text-secondary);padding:4px 10px;background:var(--surface);border-radius:20px;border:1px solid var(--border);}
+
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:11px;}
+.leg-item{display:flex;align-items:center;gap:4px;}
+.leg-dot{width:12px;height:12px;border-radius:2px;}
+</style>
+</head>
+<body>
+<h3 id="t-title"></h3>
+<p class="subtitle" id="t-subtitle"></p>
+
+<!-- Running Queue -->
+<div class="queue-section">
+  <div class="queue-header"><span id="t-running-label"></span><span class="phase-tag" id="t-phase1-tag"></span></div>
+  <div class="queue-cards" id="running-queue"></div>
+</div>
+
+<!-- Waiting Queue -->
+<div class="queue-section">
+  <div class="queue-header"><span id="t-waiting-label"></span><span class="phase-tag phase2" id="t-phase2-tag"></span></div>
+  <div class="queue-cards" id="waiting-queue"></div>
+</div>
+
+<!-- Bottom panels -->
+<div class="bottom-panels">
+  <div class="panel">
+    <div class="panel-label" id="t-budget-label"></div>
+    <div class="gauge-bar-wrap"><div class="gauge-bar" id="budget-bar"></div></div>
+    <div class="gauge-val" id="budget-val"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-label" id="t-pool-label"></div>
+    <div class="block-grid" id="block-grid"></div>
+    <div class="block-pool-summary" id="pool-summary"></div>
+  </div>
+</div>
+
+<!-- Scheduler output -->
+<div class="sched-output" id="sched-output">
+  <div class="sched-output-label" id="t-output-label"></div>
+  <div class="sched-output-items" id="sched-output-items"></div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="leg-item"><div class="leg-dot" style="background:var(--orange-light);border:1px solid var(--orange);"></div><span id="t-leg-a"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--green-light);border:1px solid var(--green);"></div><span id="t-leg-b"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--purple-light);border:1px solid var(--purple);"></div><span id="t-leg-c"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--accent-light);border:1px solid var(--accent);"></div><span id="t-leg-d"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--yellow-light);border:1px solid var(--yellow);"></div><span id="t-leg-e"></span></div>
+</div>
+
+<!-- Step desc -->
+<div class="step-desc" id="step-desc"></div>
+
+<!-- Controls -->
+<div class="controls">
+  <button onclick="prevStep()" id="btn-prev"></button>
+  <button class="primary" onclick="nextStep()" id="btn-next"></button>
+  <button onclick="resetAll()" id="btn-reset"></button>
+  <span class="status" id="step-status"></span>
+</div>
+
+<script>
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+
+const TOTAL_STEPS = 8;
+const TOTAL_BLOCKS = 20;
+const BLOCK_SIZE = 16; // tokens per block
+
+const TR = {
+  zh:{
+    title:'Scheduler 两阶段调度算法',
+    subtitle:'一次调度迭代中，Phase 1 先处理 Running 队列（decode），Phase 2 再处理 Waiting 队列（prefill）',
+    runningLabel:'Running 队列（运行中）',
+    waitingLabel:'Waiting 队列（等待中）',
+    phase1Tag:'Phase 1',
+    phase2Tag:'Phase 2',
+    budgetLabel:'Token Budget（max_num_batched_tokens = 2048）',
+    poolLabel:'KV Block Pool（共 20 块，每块 16 tokens）',
+    outputLabel:'SchedulerOutput → 发送给 Executor',
+    legA:'请求 A（decode）',legB:'请求 B（decode）',legC:'请求 C（decode）',
+    legD:'请求 D（新请求，prefill）',legE:'请求 E（新请求，prefill）',
+    btnPrev:'← 上一步',btnNext:'下一步 →',btnReset:'重置',
+    stepStatus:(s,t)=>`步骤 ${s} / ${t}`,
+    freeBlocks:(n)=>`空闲: ${n} 块`,
+    budgetText:(used,total)=>`已用: ${used} / ${total} tokens（剩余: ${total-used}）`,
+    emptyHint:'（空）',
+    steps:[
+      {title:'初始状态',desc:'Running 队列有 3 个正在生成的请求：A（已计算 500 tokens，占 8 块）、B（300 tokens，占 4 块）、C（200 tokens，占 3 块）。\n\nWaiting 队列有 2 个新请求：D（prompt 长度 1500 tokens）、E（prompt 长度 800 tokens）。\n\nToken budget = 2048，Block Pool 共 20 块，已分配 15 块，空闲 5 块。'},
+      {title:'Phase 1 — 调度请求 A',desc:'Phase 1 遍历 Running 队列。请求 A 是 decode 阶段，只需 1 个 token。\n\n当前已有 block 足够容纳这 1 个 token（无需分配新块）。\n\nToken budget: 2048 → 2047（消耗 1）。'},
+      {title:'Phase 1 — 调度请求 B',desc:'请求 B 同样处于 decode 阶段，需要 1 个 token。无需新块。\n\nToken budget: 2047 → 2046（消耗 1）。'},
+      {title:'Phase 1 — 调度请求 C',desc:'请求 C 也只需 1 个 decode token。无需新块。\n\nToken budget: 2046 → 2045（消耗 1）。\n\nPhase 1 结束。所有 Running 请求已调度完毕。'},
+      {title:'Phase 2 — 检查请求 D',desc:'Phase 2 开始处理 Waiting 队列。请求 D 是新请求，需要 prefill 1500 tokens。\n\n当前 budget 剩余 2045，token 数够用。但检查 block pool：1500 tokens 需要 ⌈1500/16⌉ = 94 块。空闲只有 5 块！\n\n启用 chunked prefill：只调度 block pool 能容纳的部分。5 块 × 16 tokens = 80 tokens。'},
+      {title:'Phase 2 — 调度请求 D（部分 prefill）',desc:'请求 D 获得 80 tokens 的 prefill 调度（chunked prefill）。5 个空闲块全部分配给 D。\n\nToken budget: 2045 → 1965（消耗 80）。\nBlock pool: 5 空闲 → 0 空闲。\n\n请求 D 从 Waiting 移入 Running，但仍需后续迭代继续 prefill 剩余的 1420 tokens。'},
+      {title:'Phase 2 — 检查请求 E',desc:'请求 E 需要 prefill 800 tokens。Budget 还剩 1965，token 数足够。\n\n但 block pool 已经 0 空闲块！无法为 E 分配任何物理块。\n\n请求 E 留在 Waiting 队列，等待下一次调度迭代。'},
+      {title:'最终结果 — SchedulerOutput',desc:'本次调度迭代完成。SchedulerOutput 发送给 Executor：\n\n• A: 1 token（decode）\n• B: 1 token（decode）\n• C: 1 token（decode）\n• D: 80 tokens（chunked prefill）\n\n总计: 83 tokens。请求 E 等待下次迭代。\n\n这就是两阶段调度的核心：Phase 1 保证 Running 请求的低延迟 decode，Phase 2 用剩余资源为新请求做 prefill。'}
+    ]
+  },
+  en:{
+    title:'Scheduler Two-Phase Scheduling Algorithm',
+    subtitle:'In one scheduling iteration, Phase 1 handles the Running queue (decode), then Phase 2 handles the Waiting queue (prefill)',
+    runningLabel:'Running Queue',
+    waitingLabel:'Waiting Queue',
+    phase1Tag:'Phase 1',
+    phase2Tag:'Phase 2',
+    budgetLabel:'Token Budget (max_num_batched_tokens = 2048)',
+    poolLabel:'KV Block Pool (20 blocks, 16 tokens each)',
+    outputLabel:'SchedulerOutput → Sent to Executor',
+    legA:'Request A (decode)',legB:'Request B (decode)',legC:'Request C (decode)',
+    legD:'Request D (new, prefill)',legE:'Request E (new, prefill)',
+    btnPrev:'← Prev',btnNext:'Next →',btnReset:'Reset',
+    stepStatus:(s,t)=>`Step ${s} / ${t}`,
+    freeBlocks:(n)=>`Free: ${n} blocks`,
+    budgetText:(used,total)=>`Used: ${used} / ${total} tokens (remaining: ${total-used})`,
+    emptyHint:'(empty)',
+    steps:[
+      {title:'Initial State',desc:'Running queue has 3 active requests: A (500 tokens computed, 8 blocks), B (300 tokens, 4 blocks), C (200 tokens, 3 blocks).\n\nWaiting queue has 2 new requests: D (prompt length 1500 tokens), E (prompt length 800 tokens).\n\nToken budget = 2048. Block Pool: 20 total, 15 allocated, 5 free.'},
+      {title:'Phase 1 — Schedule Request A',desc:'Phase 1 iterates through the Running queue. Request A is in decode phase, needing only 1 token.\n\nExisting blocks have enough space for this 1 token (no new block allocation needed).\n\nToken budget: 2048 → 2047 (consumed 1).'},
+      {title:'Phase 1 — Schedule Request B',desc:'Request B is also in decode phase, needs 1 token. No new blocks needed.\n\nToken budget: 2047 → 2046 (consumed 1).'},
+      {title:'Phase 1 — Schedule Request C',desc:'Request C also needs just 1 decode token. No new blocks needed.\n\nToken budget: 2046 → 2045 (consumed 1).\n\nPhase 1 complete. All Running requests have been scheduled.'},
+      {title:'Phase 2 — Check Request D',desc:'Phase 2 begins processing the Waiting queue. Request D is new, needs to prefill 1500 tokens.\n\nBudget remaining: 2045, enough tokens. But check block pool: 1500 tokens need ceil(1500/16) = 94 blocks. Only 5 free!\n\nChunked prefill kicks in: only schedule what the block pool can hold. 5 blocks x 16 tokens = 80 tokens.'},
+      {title:'Phase 2 — Schedule Request D (partial prefill)',desc:'Request D gets 80 tokens of prefill scheduled (chunked prefill). All 5 free blocks allocated to D.\n\nToken budget: 2045 → 1965 (consumed 80).\nBlock pool: 5 free → 0 free.\n\nD moves from Waiting to Running, but still needs subsequent iterations to prefill the remaining 1420 tokens.'},
+      {title:'Phase 2 — Check Request E',desc:'Request E needs to prefill 800 tokens. Budget has 1965 remaining, enough tokens.\n\nBut block pool has 0 free blocks! Cannot allocate any physical blocks for E.\n\nRequest E stays in the Waiting queue for the next scheduling iteration.'},
+      {title:'Final Result — SchedulerOutput',desc:'This scheduling iteration is complete. SchedulerOutput sent to Executor:\n\n• A: 1 token (decode)\n• B: 1 token (decode)\n• C: 1 token (decode)\n• D: 80 tokens (chunked prefill)\n\nTotal: 83 tokens. Request E waits for next iteration.\n\nThis is the core of two-phase scheduling: Phase 1 ensures low-latency decode for Running requests, Phase 2 uses remaining resources for new request prefill.'}
+    ]
+  }
+};
+
+// Running queue cards per step: [{id, cls, lines[], highlight, dimmed}]
+// Waiting queue cards per step
+// budgetUsed, freeBlocks, blockAlloc (array of 20: 'free'|'alloc-a'|...)
+// showOutput (bool)
+
+const BLOCK_ALLOC_INITIAL = [
+  // A: 8 blocks (indices 0-7)
+  'alloc-a','alloc-a','alloc-a','alloc-a','alloc-a','alloc-a','alloc-a','alloc-a',
+  // B: 4 blocks (indices 8-11)
+  'alloc-b','alloc-b','alloc-b','alloc-b',
+  // C: 3 blocks (indices 12-14)
+  'alloc-c','alloc-c','alloc-c',
+  // Free: 5 blocks (indices 15-19)
+  'free','free','free','free','free'
+];
+
+const BLOCK_ALLOC_D = [
+  'alloc-a','alloc-a','alloc-a','alloc-a','alloc-a','alloc-a','alloc-a','alloc-a',
+  'alloc-b','alloc-b','alloc-b','alloc-b',
+  'alloc-c','alloc-c','alloc-c',
+  'alloc-d','alloc-d','alloc-d','alloc-d','alloc-d'
+];
+
+function makeRunCard(id, cls, line1, line2, flags) {
+  return {id, cls, line1, line2, highlight: flags?.highlight||false, dimmed: flags?.dimmed||false, blocked: flags?.blocked||false};
+}
+
+const STATES = [
+  // Step 0: Initial state
+  {
+    running:[
+      makeRunCard('A','card-a','A','500 tok / 8 blk'),
+      makeRunCard('B','card-b','B','300 tok / 4 blk'),
+      makeRunCard('C','card-c','C','200 tok / 3 blk')
+    ],
+    waiting:[
+      makeRunCard('D','card-d','D','new: 1500 tok'),
+      makeRunCard('E','card-e','E','new: 800 tok')
+    ],
+    budgetUsed:0, freeBlocks:5, blocks: BLOCK_ALLOC_INITIAL, showOutput:false,
+    outputItems:[]
+  },
+  // Step 1: Phase 1 - Schedule A
+  {
+    running:[
+      makeRunCard('A','card-a','A','501 tok / 8 blk',{highlight:true}),
+      makeRunCard('B','card-b','B','300 tok / 4 blk',{dimmed:true}),
+      makeRunCard('C','card-c','C','200 tok / 3 blk',{dimmed:true})
+    ],
+    waiting:[
+      makeRunCard('D','card-d','D','new: 1500 tok',{dimmed:true}),
+      makeRunCard('E','card-e','E','new: 800 tok',{dimmed:true})
+    ],
+    budgetUsed:1, freeBlocks:5, blocks: BLOCK_ALLOC_INITIAL, showOutput:false,
+    outputItems:[]
+  },
+  // Step 2: Phase 1 - Schedule B
+  {
+    running:[
+      makeRunCard('A','card-a','A','501 tok / 8 blk'),
+      makeRunCard('B','card-b','B','301 tok / 4 blk',{highlight:true}),
+      makeRunCard('C','card-c','C','200 tok / 3 blk',{dimmed:true})
+    ],
+    waiting:[
+      makeRunCard('D','card-d','D','new: 1500 tok',{dimmed:true}),
+      makeRunCard('E','card-e','E','new: 800 tok',{dimmed:true})
+    ],
+    budgetUsed:2, freeBlocks:5, blocks: BLOCK_ALLOC_INITIAL, showOutput:false,
+    outputItems:[]
+  },
+  // Step 3: Phase 1 - Schedule C
+  {
+    running:[
+      makeRunCard('A','card-a','A','501 tok / 8 blk'),
+      makeRunCard('B','card-b','B','301 tok / 4 blk'),
+      makeRunCard('C','card-c','C','201 tok / 3 blk',{highlight:true})
+    ],
+    waiting:[
+      makeRunCard('D','card-d','D','new: 1500 tok',{dimmed:true}),
+      makeRunCard('E','card-e','E','new: 800 tok',{dimmed:true})
+    ],
+    budgetUsed:3, freeBlocks:5, blocks: BLOCK_ALLOC_INITIAL, showOutput:false,
+    outputItems:[]
+  },
+  // Step 4: Phase 2 - Check D (show problem)
+  {
+    running:[
+      makeRunCard('A','card-a','A','501 tok / 8 blk'),
+      makeRunCard('B','card-b','B','301 tok / 4 blk'),
+      makeRunCard('C','card-c','C','201 tok / 3 blk')
+    ],
+    waiting:[
+      makeRunCard('D','card-d','D','1500 tok → 94 blk?',{highlight:true, blocked:true}),
+      makeRunCard('E','card-e','E','new: 800 tok',{dimmed:true})
+    ],
+    budgetUsed:3, freeBlocks:5, blocks: BLOCK_ALLOC_INITIAL, showOutput:false,
+    outputItems:[]
+  },
+  // Step 5: Phase 2 - Schedule D partial
+  {
+    running:[
+      makeRunCard('A','card-a','A','501 tok / 8 blk'),
+      makeRunCard('B','card-b','B','301 tok / 4 blk'),
+      makeRunCard('C','card-c','C','201 tok / 3 blk'),
+      makeRunCard('D','card-d','D','80/1500 tok / 5 blk',{highlight:true})
+    ],
+    waiting:[
+      makeRunCard('E','card-e','E','new: 800 tok',{dimmed:true})
+    ],
+    budgetUsed:83, freeBlocks:0, blocks: BLOCK_ALLOC_D, showOutput:false,
+    outputItems:[]
+  },
+  // Step 6: Phase 2 - Check E (blocked)
+  {
+    running:[
+      makeRunCard('A','card-a','A','501 tok / 8 blk'),
+      makeRunCard('B','card-b','B','301 tok / 4 blk'),
+      makeRunCard('C','card-c','C','201 tok / 3 blk'),
+      makeRunCard('D','card-d','D','80/1500 tok / 5 blk')
+    ],
+    waiting:[
+      makeRunCard('E','card-e','E','0 blk free!',{highlight:true, blocked:true})
+    ],
+    budgetUsed:83, freeBlocks:0, blocks: BLOCK_ALLOC_D, showOutput:false,
+    outputItems:[]
+  },
+  // Step 7: Final - SchedulerOutput
+  {
+    running:[
+      makeRunCard('A','card-a','A','1 tok decode'),
+      makeRunCard('B','card-b','B','1 tok decode'),
+      makeRunCard('C','card-c','C','1 tok decode'),
+      makeRunCard('D','card-d','D','80 tok prefill')
+    ],
+    waiting:[
+      makeRunCard('E','card-e','E','new: 800 tok')
+    ],
+    budgetUsed:83, freeBlocks:0, blocks: BLOCK_ALLOC_D, showOutput:true,
+    outputItems:['A:1','B:1','C:1','D:80']
+  }
+];
+
+let currentStep = 0;
+let lang = 'zh';
+let T = TR.zh;
+
+function renderCard(c) {
+  let cls = 'req-card ' + c.cls;
+  if (c.highlight) cls += ' highlight';
+  if (c.dimmed) cls += ' dimmed';
+  if (c.blocked) cls += ' blocked';
+  return `<div class="${cls}"><div class="req-id">${c.line1}</div><div class="req-detail">${c.line2}</div></div>`;
+}
+
+function render(step) {
+  const state = STATES[step];
+  const s = T.steps[step];
+
+  // Running queue
+  const rq = document.getElementById('running-queue');
+  rq.innerHTML = state.running.map(renderCard).join('');
+
+  // Waiting queue
+  const wq = document.getElementById('waiting-queue');
+  if (state.waiting.length === 0) {
+    wq.innerHTML = `<span class="empty-hint">${T.emptyHint}</span>`;
+  } else {
+    wq.innerHTML = state.waiting.map(renderCard).join('');
+  }
+
+  // Budget gauge
+  const budgetPct = (state.budgetUsed / 2048) * 100;
+  const bar = document.getElementById('budget-bar');
+  bar.style.width = budgetPct + '%';
+  bar.className = 'gauge-bar' + (budgetPct > 80 ? ' full' : budgetPct > 50 ? ' warn' : '');
+  document.getElementById('budget-val').textContent = T.budgetText(state.budgetUsed, 2048);
+
+  // Block pool
+  const grid = document.getElementById('block-grid');
+  grid.innerHTML = state.blocks.map(b => `<div class="block-cell ${b}"></div>`).join('');
+  document.getElementById('pool-summary').textContent = T.freeBlocks(state.freeBlocks);
+
+  // Scheduler output
+  const outputEl = document.getElementById('sched-output');
+  if (state.showOutput) {
+    outputEl.classList.add('visible');
+    const itemsEl = document.getElementById('sched-output-items');
+    const colorMap = {'A':'card-a','B':'card-b','C':'card-c','D':'card-d'};
+    itemsEl.innerHTML = state.outputItems.map(item => {
+      const parts = item.split(':');
+      const cls = colorMap[parts[0]] || '';
+      return `<div class="sched-item req-card ${cls}">${parts[0]}: ${parts[1]} tok</div>`;
+    }).join('') + `<div class="sched-item" style="background:var(--surface);border:1px solid var(--border);color:var(--text);font-weight:700;">= 83 tokens</div>`;
+  } else {
+    outputEl.classList.remove('visible');
+  }
+
+  // Step desc
+  const sd = document.getElementById('step-desc');
+  sd.innerHTML = `<div class="step-title">${s.title}</div><div>${s.desc.replace(/\n/g,'<br>')}</div>`;
+  document.getElementById('step-status').textContent = T.stepStatus(step + 1, TOTAL_STEPS);
+}
+
+function goToStep(s) { currentStep = s; render(s); }
+function nextStep() { if (currentStep < TOTAL_STEPS - 1) goToStep(currentStep + 1); }
+function prevStep() { if (currentStep > 0) goToStep(currentStep - 1); }
+function resetAll() { currentStep = 0; render(0); }
+
+function applyLang() {
+  lang = getLang(); T = TR[lang];
+  document.getElementById('t-title').textContent = T.title;
+  document.getElementById('t-subtitle').textContent = T.subtitle;
+  document.getElementById('t-running-label').textContent = T.runningLabel;
+  document.getElementById('t-waiting-label').textContent = T.waitingLabel;
+  document.getElementById('t-phase1-tag').textContent = T.phase1Tag;
+  document.getElementById('t-phase2-tag').textContent = T.phase2Tag;
+  document.getElementById('t-budget-label').textContent = T.budgetLabel;
+  document.getElementById('t-pool-label').textContent = T.poolLabel;
+  document.getElementById('t-output-label').textContent = T.outputLabel;
+  document.getElementById('t-leg-a').textContent = T.legA;
+  document.getElementById('t-leg-b').textContent = T.legB;
+  document.getElementById('t-leg-c').textContent = T.legC;
+  document.getElementById('t-leg-d').textContent = T.legD;
+  document.getElementById('t-leg-e').textContent = T.legE;
+  document.getElementById('btn-prev').textContent = T.btnPrev;
+  document.getElementById('btn-next').textContent = T.btnNext;
+  document.getElementById('btn-reset').textContent = T.btnReset;
+}
+
+function syncTheme() {
+  try { const d = window.parent.document.body.classList.contains('dark') || window.parent.document.documentElement.classList.contains('dark'); document.body.classList.toggle('dark', d); } catch(e) {}
+}
+
+applyLang();
+resetAll();
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, {attributes:true, attributeFilter:['class']}); } catch(e) {}
+try { new MutationObserver(syncTheme).observe(window.parent.document.body, {attributes:true, attributeFilter:['class']}); } catch(e) {}
+</script>
+</body>
+</html>

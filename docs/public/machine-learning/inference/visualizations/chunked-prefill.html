@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chunked Prefill Visualization</title>
+<style>
+:root{--bg:#fff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--text-secondary:#64748b;--accent:#3b82f6;--accent-light:#dbeafe;--green:#22c55e;--green-light:#dcfce7;--orange:#f97316;--orange-light:#ffedd5;--purple:#a855f7;--purple-light:#f3e8ff;--red:#ef4444;--red-light:#fee2e2;--yellow:#eab308;--yellow-light:#fef9c3;}
+body.dark{--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--text-secondary:#94a3b8;--accent:#60a5fa;--accent-light:#1e3a5f;--green:#4ade80;--green-light:#052e16;--orange:#fb923c;--orange-light:#431407;--purple:#c084fc;--purple-light:#2e1065;--red:#f87171;--red-light:#450a0a;--yellow:#facc15;--yellow-light:#422006;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:20px;font-size:13px;line-height:1.6;}
+h3{font-size:15px;font-weight:600;margin-bottom:5px;}
+.subtitle{font-size:12px;color:var(--text-secondary);margin-bottom:14px;}
+
+/* Panel titles */
+.panel{margin-bottom:18px;}
+.panel-title{font-size:13px;font-weight:700;margin-bottom:6px;padding:4px 8px;border-radius:4px;display:inline-block;}
+.panel-title.traditional{background:var(--red-light);color:var(--red);}
+.panel-title.chunked{background:var(--green-light);color:var(--green);}
+
+/* Iteration rows */
+.iter-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
+.iter-table td{padding:3px 0;vertical-align:middle;}
+.iter-label{width:55px;font-size:10px;font-weight:700;color:var(--text-secondary);text-align:right;padding-right:8px !important;white-space:nowrap;}
+.iter-bar-cell{padding:0 !important;}
+.iter-bar-wrap{height:28px;position:relative;display:flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;}
+.seg{height:100%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;transition:width .5s ease, opacity .5s ease;overflow:hidden;white-space:nowrap;min-width:0;}
+.seg-x{background:var(--red-light);color:var(--red);}
+.seg-a{background:var(--orange-light);color:var(--orange);}
+.seg-b{background:var(--green-light);color:var(--green);}
+.seg-blocked{background:repeating-linear-gradient(45deg,var(--surface),var(--surface) 3px,var(--border) 3px,var(--border) 6px);color:var(--red);font-style:italic;font-size:8px;}
+.seg-empty{background:var(--surface);color:var(--text-secondary);font-style:italic;font-size:8px;}
+
+/* Budget marker */
+.budget-line{position:absolute;right:0;top:0;bottom:0;width:2px;background:var(--accent);z-index:5;}
+.budget-label{position:absolute;top:-14px;right:-2px;font-size:8px;color:var(--accent);font-weight:600;white-space:nowrap;}
+
+/* Overflow indicator */
+.overflow-marker{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:10px;z-index:6;}
+
+/* Latency indicator */
+.latency-box{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;font-size:10px;font-weight:600;margin-top:4px;}
+.latency-bad{background:var(--red-light);color:var(--red);}
+.latency-good{background:var(--green-light);color:var(--green);}
+
+/* Step description */
+.step-desc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--text);border-left:3px solid var(--accent);min-height:54px;}
+.step-title{font-weight:700;color:var(--accent);margin-bottom:3px;}
+
+/* Controls */
+.controls{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap;}
+button{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;transition:all .2s;font-weight:500;}
+button:hover{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+button.primary:hover{opacity:.88;}
+.status{font-size:12px;color:var(--text-secondary);padding:4px 10px;background:var(--surface);border-radius:20px;border:1px solid var(--border);}
+
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;margin-bottom:14px;font-size:11px;}
+.leg-item{display:flex;align-items:center;gap:4px;}
+.leg-dot{width:12px;height:12px;border-radius:2px;}
+
+.dimmed{opacity:0.25;}
+</style>
+</head>
+<body>
+<h3 id="t-title"></h3>
+<p class="subtitle" id="t-subtitle"></p>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="leg-item"><div class="leg-dot" style="background:var(--red-light);border:1px solid var(--red);"></div><span id="t-leg-x"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--orange-light);border:1px solid var(--orange);"></div><span id="t-leg-a"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--green-light);border:1px solid var(--green);"></div><span id="t-leg-b"></span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:repeating-linear-gradient(45deg,var(--surface),var(--surface) 3px,var(--border) 3px,var(--border) 6px);border:1px solid var(--red);"></div><span id="t-leg-blocked"></span></div>
+</div>
+
+<!-- Traditional panel -->
+<div class="panel" id="panel-trad">
+  <div class="panel-title traditional" id="t-trad-title"></div>
+  <div id="trad-content"></div>
+  <div id="trad-latency"></div>
+</div>
+
+<!-- Chunked panel -->
+<div class="panel" id="panel-chunk">
+  <div class="panel-title chunked" id="t-chunk-title"></div>
+  <div id="chunk-content"></div>
+  <div id="chunk-latency"></div>
+</div>
+
+<!-- Step desc -->
+<div class="step-desc" id="step-desc"></div>
+
+<!-- Controls -->
+<div class="controls">
+  <button onclick="prevStep()" id="btn-prev"></button>
+  <button class="primary" onclick="nextStep()" id="btn-next"></button>
+  <button onclick="resetAll()" id="btn-reset"></button>
+  <span class="status" id="step-status"></span>
+</div>
+
+<script>
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+
+const BUDGET = 2048;
+
+const TR = {
+  zh:{
+    title:'Chunked Prefill 对比：传统 vs 分块预填充',
+    subtitle:'当新请求的 prompt 很长时，传统方式会阻塞正在解码的请求；分块预填充将长 prompt 拆成小块，与解码请求交错执行',
+    tradTitle:'传统预填充（无分块）',
+    chunkTitle:'Chunked Prefill（max_num_batched_tokens = 2048）',
+    legX:'请求 X（prefill / decode）',legA:'请求 A（decode）',legB:'请求 B（decode）',legBlocked:'被阻塞',
+    btnPrev:'← 上一步',btnNext:'下一步 →',btnReset:'重置',
+    stepStatus:(s,t)=>`步骤 ${s} / ${t}`,
+    iter:'迭代',tokens:'tokens',
+    blocked:'阻塞!',
+    latencySpike:'A/B 延迟飙升 — 整整 1 次迭代被阻塞',
+    latencySmooth:'A/B 每次迭代都正常解码 — 延迟平稳',
+    overflow:'超出预算!',
+    prefill:'prefill',decode:'decode',remaining:'剩余',
+    steps:[
+      {title:'初始状态：A、B 正在解码，X 到达',desc:'请求 A 和 B 已经完成 prefill，正在逐 token 解码（每次迭代各消耗 1 个 token 的计算量）。\n\n此时新请求 X 到达，携带 6000 token 的长 prompt，需要进行 prefill。'},
+      {title:'传统模式 迭代 1：X 独占整次迭代',desc:'传统模式下，X 的 6000 token prefill 必须一次性完成。这远超 token 预算（2048），但系统仍然将全部 6000 token 塞入一次迭代。\n\nA 和 B 在这次迭代中完全被阻塞，无法生成任何 token。用户感知到明显的延迟卡顿。'},
+      {title:'传统模式 迭代 2+：恢复正常但损害已造成',desc:'X 的 prefill 完成后进入 decode 阶段。从迭代 2 开始，A(1) + B(1) + X(1) = 3 tokens，远低于预算。\n\n但 A 和 B 的用户已经经历了一次迭代的完全停顿——对实时应用来说这是不可接受的。'},
+      {title:'分块模式 迭代 1：X 分块填入，A/B 继续',desc:'Chunked Prefill 将 X 的 6000 token prompt 拆分成多块。第一次迭代：A(1) + B(1) + X(2046) = 2048，恰好填满 token 预算。\n\nA 和 B 没有被阻塞，照常生成 token！X 完成了 2046/6000 的 prefill。'},
+      {title:'分块模式 迭代 2-3：X 继续分块预填充',desc:'迭代 2：A(1) + B(1) + X(2046) = 2048，X 累计完成 4092/6000。\n迭代 3：A(1) + B(1) + X(1908) = 1910，X 完成剩余 1908 token，prefill 全部完成。\n\nA 和 B 全程没有任何中断，每次迭代都正常解码。'},
+      {title:'分块模式 迭代 4+：所有请求正常解码',desc:'X 的 prefill 全部完成，进入 decode 阶段。迭代 4 起：A(1) + B(1) + X(1) = 3 tokens。\n\n对比两种模式：\n• 传统：A/B 被阻塞 1 次迭代，延迟出现尖峰\n• 分块：A/B 从未被阻塞，延迟始终平稳\n• X 的 prefill 总量相同（6000 token），只是被分摊到多次迭代'}
+    ]
+  },
+  en:{
+    title:'Chunked Prefill: Traditional vs Chunked Comparison',
+    subtitle:'When a new request has a long prompt, traditional prefill blocks decoding requests; chunked prefill splits the prompt into chunks interleaved with decode tokens',
+    tradTitle:'Traditional Prefill (No Chunking)',
+    chunkTitle:'Chunked Prefill (max_num_batched_tokens = 2048)',
+    legX:'Request X (prefill / decode)',legA:'Request A (decode)',legB:'Request B (decode)',legBlocked:'Blocked',
+    btnPrev:'← Prev',btnNext:'Next →',btnReset:'Reset',
+    stepStatus:(s,t)=>`Step ${s} / ${t}`,
+    iter:'Iter',tokens:'tokens',
+    blocked:'Blocked!',
+    latencySpike:'A/B latency spike — blocked for entire iteration',
+    latencySmooth:'A/B decode every iteration — smooth latency',
+    overflow:'Over budget!',
+    prefill:'prefill',decode:'decode',remaining:'remaining',
+    steps:[
+      {title:'Setup: A & B decoding, X arrives',desc:'Requests A and B have finished prefill and are decoding token by token (each consuming 1 token of compute per iteration).\n\nNew request X arrives with a 6000-token prompt that needs prefill.'},
+      {title:'Traditional Iter 1: X monopolizes the iteration',desc:'In traditional mode, X\'s 6000-token prefill must complete in a single iteration. This far exceeds the token budget (2048), but the system processes all 6000 tokens in one go.\n\nA and B are completely blocked — they cannot generate any tokens this iteration. Users experience a noticeable latency spike.'},
+      {title:'Traditional Iter 2+: Normal again but damage is done',desc:'After X\'s prefill completes, it enters decode phase. From iteration 2 onward: A(1) + B(1) + X(1) = 3 tokens, well within budget.\n\nBut A and B\'s users already experienced a full iteration of stalling — unacceptable for real-time applications.'},
+      {title:'Chunked Iter 1: X chunked, A/B keep going',desc:'Chunked Prefill splits X\'s 6000-token prompt into chunks. Iteration 1: A(1) + B(1) + X(2046) = 2048, exactly filling the token budget.\n\nA and B are NOT blocked — they decode normally! X completes 2046/6000 of its prefill.'},
+      {title:'Chunked Iter 2-3: X continues chunked prefill',desc:'Iter 2: A(1) + B(1) + X(2046) = 2048. X has now completed 4092/6000.\nIter 3: A(1) + B(1) + X(1908) = 1910. X completes its remaining 1908 tokens.\n\nA and B had zero interruptions — they decoded every single iteration.'},
+      {title:'Chunked Iter 4+: All requests decoding normally',desc:'X\'s prefill is complete; it enters decode phase. From iter 4: A(1) + B(1) + X(1) = 3 tokens.\n\nComparing the two approaches:\n• Traditional: A/B blocked for 1 iteration, latency spike\n• Chunked: A/B never blocked, smooth latency throughout\n• X\'s total prefill is identical (6000 tokens), just spread across multiple iterations'}
+    ]
+  }
+};
+
+// State data for each step
+// trad: array of iteration rows [{segs:[{cls,w,label}], visible:bool, dimmed:bool}]
+// chunk: same
+// step 0: setup
+// step 1: trad iter 1
+// step 2: trad iter 2-6
+// step 3: chunk iter 1
+// step 4: chunk iter 2-3
+// step 5: chunk iter 4-6
+
+function buildStates(T) {
+  const bk = T.blocked;
+  const pf = T.prefill;
+  const dc = T.decode;
+  const ov = T.overflow;
+
+  // Helper: percentage of BUDGET for width, capped display
+  // For traditional iter1, X=6000 overflows
+  const tradIters = [
+    // iter1: X=6000 (overflows), A blocked, B blocked
+    {segs:[
+      {cls:'seg-x',w:100,label:'X: 6000 '+pf+' '+ov}
+    ], abBlocked:true},
+    // iter2-6: A=1, B=1, X=1 decode
+    {segs:[
+      {cls:'seg-a',w:(1/BUDGET*100),label:'A:1'},
+      {cls:'seg-b',w:(1/BUDGET*100),label:'B:1'},
+      {cls:'seg-x',w:(1/BUDGET*100),label:'X:1'}
+    ], abBlocked:false}
+  ];
+
+  const chunkIters = [
+    // iter1: A=1, B=1, X=2046
+    {segs:[
+      {cls:'seg-a',w:(1/BUDGET*100),label:'A:1'},
+      {cls:'seg-b',w:(1/BUDGET*100),label:'B:1'},
+      {cls:'seg-x',w:(2046/BUDGET*100),label:'X: 2046 '+pf}
+    ]},
+    // iter2: A=1, B=1, X=2046
+    {segs:[
+      {cls:'seg-a',w:(1/BUDGET*100),label:'A:1'},
+      {cls:'seg-b',w:(1/BUDGET*100),label:'B:1'},
+      {cls:'seg-x',w:(2046/BUDGET*100),label:'X: 2046 '+pf}
+    ]},
+    // iter3: A=1, B=1, X=1908
+    {segs:[
+      {cls:'seg-a',w:(1/BUDGET*100),label:'A:1'},
+      {cls:'seg-b',w:(1/BUDGET*100),label:'B:1'},
+      {cls:'seg-x',w:(1908/BUDGET*100),label:'X: 1908 '+pf}
+    ]},
+    // iter4-6: A=1, B=1, X=1 decode
+    {segs:[
+      {cls:'seg-a',w:(1/BUDGET*100),label:'A:1'},
+      {cls:'seg-b',w:(1/BUDGET*100),label:'B:1'},
+      {cls:'seg-x',w:(1/BUDGET*100),label:'X:1 '+dc}
+    ]}
+  ];
+
+  return {tradIters, chunkIters};
+}
+
+// Visibility per step:
+// tradShow[step] = array of {iterIdx, dimmed} for trad panel
+// chunkShow[step] = same for chunk panel
+const VISIBILITY = [
+  // Step 0: show setup - just A+B decode row, no X yet
+  {trad:[], chunk:[], showTradLatency:false, showChunkLatency:false},
+  // Step 1: trad iter1
+  {trad:[{i:0,dim:false}], chunk:[], showTradLatency:false, showChunkLatency:false},
+  // Step 2: trad iter1 dimmed + iter2-6
+  {trad:[{i:0,dim:true},{i:1,dim:false},{i:1,dim:false},{i:1,dim:false},{i:1,dim:false}], chunk:[], showTradLatency:true, showChunkLatency:false},
+  // Step 3: trad all dimmed, chunk iter1
+  {trad:[{i:0,dim:true},{i:1,dim:true},{i:1,dim:true},{i:1,dim:true},{i:1,dim:true}], chunk:[{i:0,dim:false}], showTradLatency:true, showChunkLatency:false},
+  // Step 4: trad all dimmed, chunk iter1-3
+  {trad:[{i:0,dim:true},{i:1,dim:true},{i:1,dim:true},{i:1,dim:true},{i:1,dim:true}], chunk:[{i:0,dim:true},{i:1,dim:false},{i:2,dim:false}], showTradLatency:true, showChunkLatency:false},
+  // Step 5: trad all dimmed, chunk iter1-3 dimmed + iter4-6
+  {trad:[{i:0,dim:true},{i:1,dim:true},{i:1,dim:true},{i:1,dim:true},{i:1,dim:true}], chunk:[{i:0,dim:true},{i:1,dim:true},{i:2,dim:true},{i:3,dim:false},{i:3,dim:false},{i:3,dim:false}], showTradLatency:true, showChunkLatency:true}
+];
+
+let currentStep = 0;
+let lang = 'zh';
+let T = TR.zh;
+
+function renderIterRow(iterData, iterNum, dimmed, isTraditionalOverflow) {
+  const iterLabel = T.iter + ' ' + iterNum;
+  let segsHtml = '';
+  for (const seg of iterData.segs) {
+    // Make small segments at least visible
+    const minW = seg.w < 3 ? 3 : seg.w;
+    segsHtml += `<div class="seg ${seg.cls}" style="width:${minW}%">${seg.label}</div>`;
+  }
+  // Fill remaining space
+  const totalW = iterData.segs.reduce((s,seg) => s + Math.max(seg.w, 3), 0);
+  if (totalW < 100 && !isTraditionalOverflow) {
+    segsHtml += `<div class="seg seg-empty" style="width:${100-totalW}%"></div>`;
+  }
+  // Blocked indicators for A and B
+  let blockedHtml = '';
+  if (iterData.abBlocked) {
+    blockedHtml = `<div style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--red);font-weight:700;">A,B: ${T.blocked}</div>`;
+  }
+  const dimCls = dimmed ? ' dimmed' : '';
+  return `<tr class="${dimCls}"><td class="iter-label">${iterLabel}</td><td class="iter-bar-cell"><div class="iter-bar-wrap">${segsHtml}${blockedHtml}</div></td></tr>`;
+}
+
+function renderSetupRow() {
+  const a_w = Math.max(1/BUDGET*100, 3);
+  const b_w = Math.max(1/BUDGET*100, 3);
+  const emptyW = 100 - a_w - b_w;
+  return `<tr><td class="iter-label">${T.iter} 0</td><td class="iter-bar-cell"><div class="iter-bar-wrap"><div class="seg seg-a" style="width:${a_w}%">A:1</div><div class="seg seg-b" style="width:${b_w}%">B:1</div><div class="seg seg-empty" style="width:${emptyW}%"></div></div></td></tr>`;
+}
+
+function render(step) {
+  const vis = VISIBILITY[step];
+  const states = buildStates(T);
+  const s = T.steps[step];
+
+  // Traditional panel
+  let tradHtml = '<table class="iter-table">';
+  if (step === 0) {
+    tradHtml += renderSetupRow();
+  } else {
+    for (let r = 0; r < vis.trad.length; r++) {
+      const v = vis.trad[r];
+      const iterData = states.tradIters[v.i];
+      const isOverflow = (v.i === 0);
+      tradHtml += renderIterRow(iterData, r + 1, v.dim, isOverflow);
+    }
+  }
+  tradHtml += '</table>';
+  document.getElementById('trad-content').innerHTML = tradHtml;
+
+  // Traditional latency
+  if (vis.showTradLatency) {
+    document.getElementById('trad-latency').innerHTML = `<div class="latency-box latency-bad">${T.latencySpike}</div>`;
+  } else {
+    document.getElementById('trad-latency').innerHTML = '';
+  }
+
+  // Chunked panel
+  let chunkHtml = '<table class="iter-table">';
+  if (step === 0) {
+    chunkHtml += renderSetupRow();
+  } else if (vis.chunk.length > 0) {
+    for (let r = 0; r < vis.chunk.length; r++) {
+      const v = vis.chunk[r];
+      const iterData = states.chunkIters[v.i];
+      chunkHtml += renderIterRow(iterData, r + 1, v.dim, false);
+    }
+  } else {
+    chunkHtml += `<tr><td class="iter-label" colspan="2" style="text-align:center;color:var(--text-secondary);font-style:italic;padding:8px;">—</td></tr>`;
+  }
+  chunkHtml += '</table>';
+  document.getElementById('chunk-content').innerHTML = chunkHtml;
+
+  // Chunked latency
+  if (vis.showChunkLatency) {
+    document.getElementById('chunk-latency').innerHTML = `<div class="latency-box latency-good">${T.latencySmooth}</div>`;
+  } else {
+    document.getElementById('chunk-latency').innerHTML = '';
+  }
+
+  // Dim panels based on focus
+  document.getElementById('panel-trad').style.opacity = (step >= 3 && step <= 5) ? '0.6' : '1';
+  document.getElementById('panel-chunk').style.opacity = (step >= 1 && step <= 2) ? '0.4' : '1';
+
+  // Step desc
+  const sd = document.getElementById('step-desc');
+  sd.innerHTML = `<div class="step-title">${s.title}</div><div>${s.desc.replace(/\n/g,'<br>')}</div>`;
+  document.getElementById('step-status').textContent = T.stepStatus(step + 1, 6);
+}
+
+function goToStep(s) { currentStep = s; render(s); }
+function nextStep() { if (currentStep < 5) goToStep(currentStep + 1); }
+function prevStep() { if (currentStep > 0) goToStep(currentStep - 1); }
+function resetAll() { currentStep = 0; render(0); }
+
+function applyLang() {
+  lang = getLang(); T = TR[lang];
+  document.getElementById('t-title').textContent = T.title;
+  document.getElementById('t-subtitle').textContent = T.subtitle;
+  document.getElementById('t-trad-title').textContent = T.tradTitle;
+  document.getElementById('t-chunk-title').textContent = T.chunkTitle;
+  document.getElementById('t-leg-x').textContent = T.legX;
+  document.getElementById('t-leg-a').textContent = T.legA;
+  document.getElementById('t-leg-b').textContent = T.legB;
+  document.getElementById('t-leg-blocked').textContent = T.legBlocked;
+  document.getElementById('btn-prev').textContent = T.btnPrev;
+  document.getElementById('btn-next').textContent = T.btnNext;
+  document.getElementById('btn-reset').textContent = T.btnReset;
+}
+
+function syncTheme() {
+  try { const d = window.parent.document.body.classList.contains('dark') || window.parent.document.documentElement.classList.contains('dark'); document.body.classList.toggle('dark', d); } catch(e) {}
+}
+
+applyLang();
+resetAll();
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, {attributes:true, attributeFilter:['class']}); } catch(e) {}
+try { new MutationObserver(syncTheme).observe(window.parent.document.body, {attributes:true, attributeFilter:['class']}); } catch(e) {}
+</script>
+</body>
+</html>

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Static vs Continuous Batching</title>
+<style>
+:root{--bg:#fff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--text-secondary:#64748b;--accent:#3b82f6;--accent-light:#dbeafe;--green:#22c55e;--green-light:#dcfce7;--orange:#f97316;--orange-light:#ffedd5;--purple:#a855f7;--purple-light:#f3e8ff;--red:#ef4444;--red-light:#fee2e2;--yellow:#eab308;--yellow-light:#fef9c3;}
+body.dark{--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--text-secondary:#94a3b8;--accent:#60a5fa;--accent-light:#1e3a5f;--green:#4ade80;--green-light:#052e16;--orange:#fb923c;--orange-light:#431407;--purple:#c084fc;--purple-light:#2e1065;--red:#f87171;--red-light:#450a0a;--yellow:#facc15;--yellow-light:#422006;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:20px;font-size:13px;line-height:1.6;}
+h3{font-size:15px;font-weight:600;margin-bottom:5px;}
+.subtitle{font-size:12px;color:var(--text-secondary);margin-bottom:14px;}
+
+/* Panels */
+.panels{display:flex;gap:16px;margin-top:10px;}
+.panel{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;min-width:0;}
+.panel-title{font-size:13px;font-weight:700;margin-bottom:8px;text-align:center;}
+.panel-title.static-title{color:var(--red);}
+.panel-title.continuous-title{color:var(--green);}
+
+/* Grid */
+.grid{display:flex;flex-direction:column;gap:0;}
+.grid-row{display:flex;align-items:center;gap:0;}
+.iter-label{width:48px;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;text-align:right;padding-right:6px;}
+.grid-cells{display:flex;gap:0;flex:1;}
+.cell{flex:1;height:30px;border:1px solid var(--border);border-bottom:none;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;transition:all .4s ease;}
+.grid-row:last-child .cell{border-bottom:1px solid var(--border);}
+.cell:not(:last-child){border-right:none;}
+
+/* Cell states */
+.cell-empty{background:var(--surface);color:var(--text-secondary);}
+.cell-idle{background:var(--border);color:var(--text-secondary);font-style:italic;opacity:.6;}
+.cell-a{background:var(--orange-light);color:var(--orange);}
+.cell-b{background:var(--green-light);color:var(--green);}
+.cell-c{background:var(--purple-light);color:var(--purple);}
+.cell-d{background:var(--accent-light);color:var(--accent);}
+.cell-done{background:var(--surface);color:var(--text-secondary);text-decoration:line-through;opacity:.5;}
+.cell-highlight{box-shadow:inset 0 0 0 2px var(--accent);z-index:1;position:relative;}
+
+/* Slot headers */
+.slot-headers{display:flex;gap:0;margin-left:48px;}
+.slot-header{flex:1;text-align:center;font-size:10px;font-weight:600;color:var(--text-secondary);padding:3px 2px;background:var(--surface);border:1px solid var(--border);border-bottom:none;}
+.slot-header:not(:last-child){border-right:none;}
+
+/* Legend */
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:11px;}
+.leg-item{display:flex;align-items:center;gap:4px;}
+.leg-dot{width:12px;height:12px;border-radius:2px;}
+
+/* Step description */
+.step-desc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--text);border-left:3px solid var(--accent);min-height:54px;}
+.step-title{font-weight:700;color:var(--accent);margin-bottom:3px;}
+
+/* Controls */
+.controls{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap;}
+button{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;transition:all .2s;font-weight:500;}
+button:hover{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+button.primary:hover{opacity:.88;}
+.status{font-size:12px;color:var(--text-secondary);padding:4px 10px;background:var(--surface);border-radius:20px;border:1px solid var(--border);}
+
+/* Throughput bar */
+.throughput{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;}
+.tp-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;flex:1;min-width:130px;}
+.tp-label{font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:6px;}
+.tp-bar-wrap{height:18px;background:var(--border);border-radius:4px;overflow:hidden;}
+.tp-bar{height:100%;border-radius:4px;transition:width .6s ease;}
+.tp-val{font-size:11px;font-weight:700;margin-top:3px;}
+</style>
+</head>
+<body>
+<h3 id="t-title">Static Batching vs Continuous Batching</h3>
+<p class="subtitle" id="t-subtitle">对比两种批处理策略在相同请求下的 GPU 利用率差异</p>
+
+<div class="panels">
+  <!-- Static Batching Panel -->
+  <div class="panel">
+    <div class="panel-title static-title" id="t-static-title">Static Batching</div>
+    <div class="slot-headers" id="static-headers"></div>
+    <div class="grid" id="static-grid"></div>
+  </div>
+  <!-- Continuous Batching Panel -->
+  <div class="panel">
+    <div class="panel-title continuous-title" id="t-continuous-title">Continuous Batching</div>
+    <div class="slot-headers" id="continuous-headers"></div>
+    <div class="grid" id="continuous-grid"></div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="leg-item"><div class="leg-dot" style="background:var(--orange-light);border:1px solid var(--orange);"></div><span id="t-leg-a">Req A</span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--green-light);border:1px solid var(--green);"></div><span id="t-leg-b">Req B</span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--purple-light);border:1px solid var(--purple);"></div><span id="t-leg-c">Req C</span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--accent-light);border:1px solid var(--accent);"></div><span id="t-leg-d">Req D</span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--border);opacity:.6;"></div><span id="t-leg-idle">Idle (wasted)</span></div>
+</div>
+
+<!-- Throughput gauges -->
+<div class="throughput">
+  <div class="tp-box">
+    <div class="tp-label" id="t-tp-static-label">Static GPU Utilization</div>
+    <div class="tp-bar-wrap"><div class="tp-bar" id="tp-static-bar" style="background:var(--red);"></div></div>
+    <div class="tp-val" id="tp-static-val">—</div>
+  </div>
+  <div class="tp-box">
+    <div class="tp-label" id="t-tp-continuous-label">Continuous GPU Utilization</div>
+    <div class="tp-bar-wrap"><div class="tp-bar" id="tp-continuous-bar" style="background:var(--green);"></div></div>
+    <div class="tp-val" id="tp-continuous-val">—</div>
+  </div>
+</div>
+
+<!-- Step description -->
+<div class="step-desc" id="step-desc"></div>
+
+<!-- Controls -->
+<div class="controls">
+  <button onclick="prevStep()" id="btn-prev">← Prev</button>
+  <button class="primary" onclick="nextStep()" id="btn-next">Next →</button>
+  <button onclick="resetAll()" id="btn-reset">Reset</button>
+  <span class="status" id="step-status">Step 1 / 8</span>
+</div>
+
+<script>
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+
+const NUM_ITERS = 8;
+const SLOTS = 3;
+
+// e=empty, i=idle(wasted), a/b/c/d=requests, ad/bd/cd/dd=done versions
+// Static batching grid: 8 iterations x 3 slots
+// Requests: A(7 iters), B(3 iters), C(6 iters), D(4 iters)
+// Static: Batch1=[A,B,C] iters 1-7, B finishes at iter3 but slots wasted. Batch2=[D] starts iter8
+// Continuous: Same requests but D enters when B leaves
+
+const STEPS = [
+  { // Step 0: Initial state - requests arrive
+    visibleRows: 1,
+    static:  [['a','b','c']],
+    contin:  [['a','b','c']],
+    staticUtil: 100, continUtil: 100,
+  },
+  { // Step 1: Iteration 2
+    visibleRows: 2,
+    static:  [['a','b','c'],['a','b','c']],
+    contin:  [['a','b','c'],['a','b','c']],
+    staticUtil: 100, continUtil: 100,
+  },
+  { // Step 2: Iteration 3 - B finishes
+    visibleRows: 3,
+    static:  [['a','b','c'],['a','b','c'],['a','bd','c']],
+    contin:  [['a','b','c'],['a','b','c'],['a','bd','c']],
+    staticUtil: 89, continUtil: 89,
+  },
+  { // Step 3: Iteration 4 - key difference! Static wastes slot, Continuous adds D
+    visibleRows: 4,
+    static:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','i','c']],
+    contin:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','d','c']],
+    staticUtil: 83, continUtil: 100,
+  },
+  { // Step 4: Iteration 5
+    visibleRows: 5,
+    static:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','i','c'],['a','i','c']],
+    contin:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','d','c'],['a','d','c']],
+    staticUtil: 80, continUtil: 100,
+  },
+  { // Step 5: Iteration 6 - C finishes in continuous, D finishes in continuous
+    visibleRows: 6,
+    static:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','i','c'],['a','i','c'],['a','i','cd']],
+    contin:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','d','c'],['a','d','c'],['a','dd','cd']],
+    staticUtil: 72, continUtil: 78,
+  },
+  { // Step 6: Iteration 7 - A finishes in static, batch1 finally done. Continuous: A still going
+    visibleRows: 7,
+    static:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','i','c'],['a','i','c'],['a','i','cd'],['ad','i','i']],
+    contin:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','d','c'],['a','d','c'],['a','dd','cd'],['a','e','e']],
+    staticUtil: 62, continUtil: 81,
+  },
+  { // Step 7: Iteration 8 - Static finally starts D, Continuous: A finishes
+    visibleRows: 8,
+    static:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','i','c'],['a','i','c'],['a','i','cd'],['ad','i','i'],['d','i','i']],
+    contin:  [['a','b','c'],['a','b','c'],['a','bd','c'],['a','d','c'],['a','d','c'],['a','dd','cd'],['a','e','e'],['ad','e','e']],
+    staticUtil: 58, continUtil: 83,
+  },
+];
+
+const CELL_MAP = {
+  'e': {cls:'cell-empty', l:''},
+  'i': {cls:'cell-idle', l:'idle'},
+  'a': {cls:'cell-a', l:'A'},
+  'b': {cls:'cell-b', l:'B'},
+  'c': {cls:'cell-c', l:'C'},
+  'd': {cls:'cell-d', l:'D'},
+  'ad': {cls:'cell-done', l:'A'},
+  'bd': {cls:'cell-done', l:'B'},
+  'cd': {cls:'cell-done', l:'C'},
+  'dd': {cls:'cell-done', l:'D'},
+};
+
+const TR = {
+  zh: {
+    title: 'Static Batching vs Continuous Batching 对比',
+    subtitle: '对比两种批处理策略在相同请求下的 GPU 利用率差异',
+    staticTitle: 'Static Batching（静态批处理）',
+    continuousTitle: 'Continuous Batching（连续批处理）',
+    legA: '请求 A（7 次迭代）', legB: '请求 B（3 次迭代）',
+    legC: '请求 C（6 次迭代）', legD: '请求 D（4 次迭代）',
+    legIdle: '空闲（GPU 浪费）',
+    tpStaticLabel: 'Static GPU 利用率', tpContinuousLabel: 'Continuous GPU 利用率',
+    btnPrev: '← 上一步', btnNext: '下一步 →', btnReset: '重置',
+    stepStatus: (s,t) => `步骤 ${s} / ${t}`,
+    iterLabel: (i) => `Iter ${i}`,
+    slotLabels: ['Slot 1', 'Slot 2', 'Slot 3'],
+    idleLabel: '空闲',
+    doneLabel: '完成',
+    steps: [
+      {title: 'Iter 1：所有请求开始', desc: '4 个请求到达：A（需要 7 次迭代）、B（3 次）、C（6 次）、D（4 次）。batch size = 3，所以两种策略都先调度 A、B、C。请求 D 必须等待。'},
+      {title: 'Iter 2：正常处理', desc: 'A、B、C 都在正常生成 token。两种策略目前没有区别。D 仍在排队。'},
+      {title: 'Iter 3：请求 B 完成！', desc: '请求 B 只需 3 次迭代，现在已经生成完毕。关键问题：Slot 2 现在空了，接下来怎么办？'},
+      {title: 'Iter 4：关键区别！', desc: 'Static Batching：Slot 2 空闲浪费！即使 B 已完成，整个 Batch 1 必须等 A 和 C 都结束才能启动下一个 batch。D 继续等待。\n\nContinuous Batching：D 立即填入空出的 Slot 2！调度器在每次迭代时都可以插入新请求，GPU 保持满载。'},
+      {title: 'Iter 5：差距继续扩大', desc: 'Static：Slot 2 继续空闲，GPU 有 1/3 的算力被浪费。\nContinuous：A、D、C 都在正常处理，GPU 利用率 100%。'},
+      {title: 'Iter 6：C 完成', desc: 'Static：C 完成，但 Slot 2 和 Slot 3 都在等 A 结束。\nContinuous：D 也完成了！因为 D 提前 2 个迭代进入，现在已经处理完 4 次迭代。只剩 A 在继续。'},
+      {title: 'Iter 7：Static Batch 1 终于结束', desc: 'Static：A 终于完成！整个 Batch 1 从 iter 1 到 iter 7 才结束。Slot 2 空闲了 4 个迭代，Slot 3 空闲了 1 个迭代。\nContinuous：只剩 A 在处理最后的 token。'},
+      {title: 'Iter 8：最终对比', desc: 'Static：现在才开始处理 D，但 D 还需要 3 个迭代才能完成。总共 24 个 cell 只有 14 个在工作 → 利用率 ~58%。\n\nContinuous：A 也完成了！所有 4 个请求在 8 个迭代内全部处理完毕。24 个 cell 有 20 个在工作 → 利用率 ~83%。\n\n结论：Continuous Batching 提升了约 40% 的吞吐量！'},
+    ]
+  },
+  en: {
+    title: 'Static Batching vs Continuous Batching',
+    subtitle: 'Compare GPU utilization between the two batching strategies with identical requests',
+    staticTitle: 'Static Batching',
+    continuousTitle: 'Continuous Batching',
+    legA: 'Request A (7 iters)', legB: 'Request B (3 iters)',
+    legC: 'Request C (6 iters)', legD: 'Request D (4 iters)',
+    legIdle: 'Idle (GPU wasted)',
+    tpStaticLabel: 'Static GPU Utilization', tpContinuousLabel: 'Continuous GPU Utilization',
+    btnPrev: '← Prev', btnNext: 'Next →', btnReset: 'Reset',
+    stepStatus: (s,t) => `Step ${s} / ${t}`,
+    iterLabel: (i) => `Iter ${i}`,
+    slotLabels: ['Slot 1', 'Slot 2', 'Slot 3'],
+    idleLabel: 'idle',
+    doneLabel: 'done',
+    steps: [
+      {title: 'Iter 1: All Requests Begin', desc: '4 requests arrive: A (needs 7 iterations), B (3), C (6), D (4). Batch size = 3, so both strategies schedule A, B, C first. Request D must wait.'},
+      {title: 'Iter 2: Normal Processing', desc: 'A, B, C are all generating tokens normally. No difference between the two strategies yet. D still queued.'},
+      {title: 'Iter 3: Request B Completes!', desc: 'Request B only needed 3 iterations and has finished generating. Key question: Slot 2 is now free — what happens next?'},
+      {title: 'Iter 4: The Key Difference!', desc: 'Static Batching: Slot 2 sits idle! Even though B is done, the entire Batch 1 must wait for A and C to finish before starting the next batch. D keeps waiting.\n\nContinuous Batching: D immediately fills the freed Slot 2! The scheduler can insert new requests at every iteration, keeping the GPU fully utilized.'},
+      {title: 'Iter 5: Gap Widens', desc: 'Static: Slot 2 remains idle — 1/3 of GPU compute is wasted.\nContinuous: A, D, C are all processing. GPU utilization stays at 100%.'},
+      {title: 'Iter 6: C Completes', desc: 'Static: C finishes, but Slot 2 and Slot 3 are waiting for A to end.\nContinuous: D also completes! Since D entered 2 iterations early, it has already processed all 4 iterations. Only A remains.'},
+      {title: 'Iter 7: Static Batch 1 Finally Ends', desc: 'Static: A finally completes! Batch 1 ran from iter 1 to 7. Slot 2 was idle for 4 iterations, Slot 3 idle for 1.\nContinuous: Only A is processing its final tokens.'},
+      {title: 'Iter 8: Final Comparison', desc: 'Static: Only NOW does D start processing, and it still needs 3 more iterations. Out of 24 total cells, only 14 are working — utilization ~58%.\n\nContinuous: A is also done! All 4 requests completed within 8 iterations. 20 out of 24 cells are working — utilization ~83%.\n\nConclusion: Continuous Batching improves throughput by ~40%!'},
+    ]
+  }
+};
+
+let currentStep = 0;
+let lang = 'zh';
+let T = TR.zh;
+
+function renderGrid(containerId, headerId, rows, visibleRows, highlightRow) {
+  const container = document.getElementById(containerId);
+  const headerEl = document.getElementById(headerId);
+
+  // Slot headers
+  headerEl.innerHTML = T.slotLabels.map(s => `<div class="slot-header">${s}</div>`).join('');
+
+  // Build all 8 rows
+  let html = '';
+  for (let r = 0; r < NUM_ITERS; r++) {
+    const isVisible = r < visibleRows;
+    const isHighlight = r === highlightRow;
+    html += '<div class="grid-row">';
+    html += `<div class="iter-label">${T.iterLabel(r + 1)}</div>`;
+    html += '<div class="grid-cells">';
+    for (let c = 0; c < SLOTS; c++) {
+      if (isVisible && rows[r]) {
+        const key = rows[r][c];
+        const info = CELL_MAP[key] || CELL_MAP['e'];
+        const hl = isHighlight ? ' cell-highlight' : '';
+        let label = info.l;
+        if (key === 'i') label = T.idleLabel;
+        if (key.endsWith('d') && key.length === 2) label = info.l + ' ✓';
+        html += `<div class="cell ${info.cls}${hl}">${label}</div>`;
+      } else {
+        html += `<div class="cell cell-empty"></div>`;
+      }
+    }
+    html += '</div></div>';
+  }
+  container.innerHTML = html;
+}
+
+function render(step) {
+  const state = STEPS[step];
+  const s = T.steps[step];
+
+  const highlightRow = state.visibleRows - 1;
+  renderGrid('static-grid', 'static-headers', state.static, state.visibleRows, highlightRow);
+  renderGrid('continuous-grid', 'continuous-headers', state.contin, state.visibleRows, highlightRow);
+
+  // Throughput bars
+  document.getElementById('tp-static-bar').style.width = state.staticUtil + '%';
+  document.getElementById('tp-continuous-bar').style.width = state.continUtil + '%';
+  document.getElementById('tp-static-val').textContent = state.staticUtil + '%';
+  document.getElementById('tp-continuous-val').textContent = state.continUtil + '%';
+
+  // Step description
+  const sd = document.getElementById('step-desc');
+  sd.innerHTML = `<div class="step-title">${s.title}</div><div>${s.desc.replace(/\n/g,'<br>')}</div>`;
+  document.getElementById('step-status').textContent = T.stepStatus(step + 1, STEPS.length);
+}
+
+function goToStep(s) { currentStep = s; render(s); }
+function nextStep() { if (currentStep < STEPS.length - 1) goToStep(currentStep + 1); }
+function prevStep() { if (currentStep > 0) goToStep(currentStep - 1); }
+function resetAll() { currentStep = 0; render(0); }
+
+function applyLang() {
+  lang = getLang(); T = TR[lang];
+  document.getElementById('t-title').textContent = T.title;
+  document.getElementById('t-subtitle').textContent = T.subtitle;
+  document.getElementById('t-static-title').textContent = T.staticTitle;
+  document.getElementById('t-continuous-title').textContent = T.continuousTitle;
+  document.getElementById('t-leg-a').textContent = T.legA;
+  document.getElementById('t-leg-b').textContent = T.legB;
+  document.getElementById('t-leg-c').textContent = T.legC;
+  document.getElementById('t-leg-d').textContent = T.legD;
+  document.getElementById('t-leg-idle').textContent = T.legIdle;
+  document.getElementById('t-tp-static-label').textContent = T.tpStaticLabel;
+  document.getElementById('t-tp-continuous-label').textContent = T.tpContinuousLabel;
+  document.getElementById('btn-prev').textContent = T.btnPrev;
+  document.getElementById('btn-next').textContent = T.btnNext;
+  document.getElementById('btn-reset').textContent = T.btnReset;
+}
+
+function syncTheme() {
+  try { const d=window.parent.document.body.classList.contains('dark')||window.parent.document.documentElement.classList.contains('dark'); document.body.classList.toggle('dark',d); } catch(e) {}
+}
+
+applyLang();
+resetAll();
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['class']}); } catch(e) {}
+try { new MutationObserver(syncTheme).observe(window.parent.document.body,{attributes:true,attributeFilter:['class']}); } catch(e) {}
+</script>
+</body>
+</html>
