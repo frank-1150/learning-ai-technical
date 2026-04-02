@@ -86,6 +86,14 @@ function sidebar(): DefaultTheme.Sidebar {
             ]
           },
           {
+            text: '公司与访谈',
+            collapsed: false,
+            items: [
+              { text: '概览', link: '/zh/ai-applications/companies/' },
+              { text: 'Ricursive Intelligence', link: '/zh/ai-applications/companies/ricursive-intelligence' }
+            ]
+          },
+          {
             text: 'AI 行业观点',
             collapsed: false,
             items: [

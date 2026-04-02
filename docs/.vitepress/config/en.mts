@@ -71,6 +71,14 @@ function sidebar(): DefaultTheme.Sidebar {
             ]
           },
           {
+            text: 'Companies & Interviews',
+            collapsed: false,
+            items: [
+              { text: 'Overview', link: '/ai-applications/companies/' },
+              { text: 'Ricursive Intelligence', link: '/ai-applications/companies/ricursive-intelligence' }
+            ]
+          },
+          {
             text: 'AI Industry Views',
             collapsed: false,
             items: [
