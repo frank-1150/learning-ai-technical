@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PagedAttention Block-wise Computation</title>
+<style>
+:root {
+  --bg:#fff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--text-secondary:#64748b;
+  --accent:#3b82f6;--accent-light:#dbeafe;--green:#22c55e;--green-light:#dcfce7;
+  --orange:#f97316;--orange-light:#ffedd5;--purple:#a855f7;--purple-light:#f3e8ff;
+}
+body.dark{--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--text-secondary:#94a3b8;--accent:#60a5fa;--accent-light:#1e3a5f;--green:#4ade80;--green-light:#052e16;--orange:#fb923c;--orange-light:#431407;--purple:#c084fc;--purple-light:#2e1065;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:20px;font-size:14px;line-height:1.6;}
+h3{font-size:15px;font-weight:600;margin-bottom:10px;}
+.subtitle{font-size:12px;color:var(--text-secondary);margin-bottom:16px;}
+.layout{display:flex;gap:16px;flex-wrap:wrap;}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;flex:1;min-width:200px;}
+.panel-title{font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
+.block{border-radius:6px;padding:6px 8px;font-size:12px;font-weight:500;border:2px solid transparent;text-align:center;min-width:44px;transition:all .3s ease;}
+.block.b0{background:var(--orange-light);color:var(--orange);border-color:var(--orange);}
+.block.b1{background:var(--green-light);color:var(--green);border-color:var(--green);}
+.block.b2{background:var(--purple-light);color:var(--purple);border-color:var(--purple);}
+.block.active{box-shadow:0 0 0 3px currentColor;transform:scale(1.08);}
+.block.dim{opacity:.25;}
+.step{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:7px;margin-bottom:6px;border:1px solid transparent;transition:all .3s ease;cursor:pointer;}
+.step.active{border-color:var(--accent);background:var(--accent-light);}
+.step-num{min-width:22px;height:22px;border-radius:50%;background:var(--border);color:var(--text-secondary);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.step.active .step-num{background:var(--accent);color:#fff;}
+.step-text{font-size:12px;}
+.matrix-area{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:12px;}
+.matrix-title{font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:10px;}
+.matrix-wrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.matrix{border:2px solid var(--border);border-radius:6px;overflow:hidden;}
+.matrix table{border-collapse:collapse;}
+.matrix td{padding:5px 8px;font-size:11px;text-align:center;border:1px solid var(--border);min-width:38px;transition:all .3s ease;font-weight:500;}
+.matrix td.header{background:var(--surface);color:var(--text-secondary);font-weight:700;font-size:10px;}
+.matrix td.b0{background:var(--orange-light);color:var(--orange);}
+.matrix td.b1{background:var(--green-light);color:var(--green);}
+.matrix td.b2{background:var(--purple-light);color:var(--purple);}
+.matrix td.result{background:var(--accent-light);color:var(--accent);font-weight:700;}
+.matrix td.qc{background:var(--accent-light);color:var(--accent);font-weight:700;}
+.op-symbol{font-size:20px;color:var(--text-secondary);font-weight:300;}
+.arrow{font-size:18px;color:var(--text-secondary);}
+.controls{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap;}
+button{padding:7px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;transition:all .2s;font-weight:500;}
+button:hover{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+button.primary:hover{opacity:.88;}
+.status{font-size:12px;color:var(--text-secondary);padding:4px 10px;background:var(--surface);border-radius:20px;border:1px solid var(--border);}
+.score-bars{margin-top:10px;}
+.score-row{display:flex;gap:8px;align-items:center;margin-bottom:5px;}
+.score-label{font-size:11px;color:var(--text-secondary);width:80px;flex-shrink:0;}
+.score-bar-wrap{flex:1;height:14px;background:var(--border);border-radius:7px;overflow:hidden;}
+.score-bar{height:100%;border-radius:7px;transition:width .6s ease;}
+.score-val{font-size:11px;font-weight:600;width:38px;text-align:right;}
+.note{font-size:11px;color:var(--text-secondary);margin-top:10px;padding:8px 10px;background:var(--surface);border-radius:6px;border-left:3px solid var(--accent);}
+</style>
+</head>
+<body>
+<h3>PagedAttention Block-wise Computation</h3>
+<p class="subtitle">How query vector attends to K/V vectors scattered across non-contiguous physical blocks</p>
+
+<div class="layout">
+  <div class="panel" style="flex:0 0 220px;">
+    <div class="panel-title">GPU Physical Memory</div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">Blocks stored non-contiguously</div>
+    <div style="position:relative;height:200px;border:1px dashed var(--border);border-radius:6px;background:var(--bg);">
+      <div id="phys-b0" style="position:absolute;top:10px;left:8px;width:90px;" class="block b0">
+        <div style="font-size:10px;font-weight:700;">Phys Block 7</div>
+        <div style="font-size:10px;margin-top:2px;">Four·score·and·seven</div>
+      </div>
+      <div id="phys-b2" style="position:absolute;top:10px;right:8px;width:90px;" class="block b2">
+        <div style="font-size:10px;font-weight:700;">Phys Block 3</div>
+        <div style="font-size:10px;margin-top:2px;">brought·forth·◻·◻</div>
+      </div>
+      <div id="phys-b1" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);width:90px;" class="block b1">
+        <div style="font-size:10px;font-weight:700;">Phys Block 1</div>
+        <div style="font-size:10px;margin-top:2px;">years·ago·our·fathers</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;">
+      <div class="block b2" style="display:inline-block;padding:4px 10px;font-weight:700;">Query: "forth"</div>
+    </div>
+    <div class="note">Block 7 at addr 0x2800<br>Block 1 at addr 0x0400<br>Block 3 at addr 0x0C00<br>Physically non-contiguous</div>
+  </div>
+
+  <div class="panel" style="flex:1;min-width:280px;">
+    <div class="panel-title">Block-wise Attention Steps</div>
+    <div id="steps-container">
+      <div class="step" id="step-0" onclick="goToStep(0)"><div class="step-num">1</div><div class="step-text"><strong>Linear Transform</strong>: "forth" → query vector q<sub>i</sub> via W<sub>Q</sub></div></div>
+      <div class="step" id="step-1" onclick="goToStep(1)"><div class="step-num">2</div><div class="step-text"><strong>Block 0</strong>: q<sub>i</sub> · K<sub>0</sub> (Block 7: "Four score and seven") → A<sub>i0</sub></div></div>
+      <div class="step" id="step-2" onclick="goToStep(2)"><div class="step-num">3</div><div class="step-text"><strong>Block 1</strong>: q<sub>i</sub> · K<sub>1</sub> (Block 1: "years ago our fathers") → A<sub>i1</sub></div></div>
+      <div class="step" id="step-3" onclick="goToStep(3)"><div class="step-num">4</div><div class="step-text"><strong>Block 2</strong>: q<sub>i</sub> · K<sub>2</sub> (Block 3: "brought forth") → A<sub>i2</sub></div></div>
+      <div class="step" id="step-4" onclick="goToStep(4)"><div class="step-num">5</div><div class="step-text"><strong>Softmax</strong>: Normalize scores across all blocks</div></div>
+      <div class="step" id="step-5" onclick="goToStep(5)"><div class="step-num">6</div><div class="step-text"><strong>Weighted Sum</strong>: softmax weights × V vectors → output o<sub>i</sub></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="matrix-area">
+  <div class="matrix-title" id="matrix-title-text">Click a step or "Next" to begin</div>
+  <div class="matrix-wrap" id="matrix-content"><div style="color:var(--text-secondary);font-size:13px;padding:20px;">Click "Next" or a step above to start</div></div>
+</div>
+<div class="matrix-area" id="score-area" style="margin-top:10px;display:none;">
+  <div class="matrix-title">Attention Scores (before/after Softmax)</div>
+  <div class="score-bars" id="score-bars-content"></div>
+</div>
+
+<div class="controls">
+  <button onclick="prevStep()">← Prev</button>
+  <button class="primary" onclick="nextStep()">Next →</button>
+  <button onclick="resetAll()">Reset</button>
+  <span class="status" id="step-status">Step 1 / 6</span>
+</div>
+
+<script>
+const tokens={b0:['Four','score','and','seven'],b1:['years','ago','our','fathers'],b2:['brought','forth']};
+const raw_scores=[0.15,0.22,0.08,0.31,0.14,0.28,0.42,0.68,0.51];
+function softmax(arr){const e=arr.map(x=>Math.exp(x));const s=e.reduce((a,b)=>a+b,0);return e.map(x=>x/s);}
+const soft=softmax(raw_scores);
+const matTitles=['① Linear transform: query token → q_i','② Block 0 (Phys 7): q · K₀','③ Block 1 (Phys 1): q · K₁','④ Block 2 (Phys 3): q · K₂','⑤ Softmax normalization across all blocks','⑥ Weighted sum → output o_i'];
+let currentStep=-1;
+
+function renderMatrix(step){
+  const mc=document.getElementById('matrix-content');
+  document.getElementById('matrix-title-text').textContent=matTitles[step];
+  mc.innerHTML='';
+  if(step===0){
+    mc.innerHTML=`<div class="matrix"><table><tr><td class="header">token</td><td class="qc">"forth"</td></tr><tr><td class="header">pos</td><td class="qc">9</td></tr></table></div><div class="op-symbol">× W<sub>Q</sub></div><div class="arrow">→</div><div class="matrix"><table><tr><td class="header">q<sub>i</sub></td><td class="qc">[0.42, -0.18, 0.73, ...]</td></tr><tr><td class="header">dim</td><td class="qc">d = 4096</td></tr></table></div>`;
+  } else if(step>=1&&step<=3){
+    const bi=step-1;const cls=['b0','b1','b2'][bi];const bt=[tokens.b0,tokens.b1,tokens.b2][bi];const pn=[7,1,3][bi];
+    const kR=bt.map((t,i)=>`<tr><td class="header">k<sub>${i}</sub></td><td class="${cls}">[...${t}...]</td></tr>`).join('');
+    const sR=bt.map((t,i)=>{const si=bi*4+i;if(si>=raw_scores.length)return'';return`<tr><td class="header">A<sub>${i}</sub></td><td class="${cls}">${raw_scores[si].toFixed(3)}</td></tr>`;}).join('');
+    mc.innerHTML=`<div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px;">Query q<sub>i</sub></div><div class="matrix"><table><tr><td class="header">q<sub>i</sub></td><td class="qc">[d=4096]</td></tr></table></div></div><div class="op-symbol">·</div><div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px;">K<sub>${bi}</sub> (Phys Block ${pn})</div><div class="matrix"><table>${kR}</table></div></div><div class="arrow">→</div><div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px;">Score A<sub>i${bi}</sub></div><div class="matrix"><table>${sR}</table></div></div>`;
+  } else if(step===4){
+    const rows=raw_scores.map((s,i)=>{const bi=Math.floor(i/4);const cls=['b0','b1','b2'][Math.min(bi,2)];return`<tr><td class="header">tok ${i+1}</td><td class="${cls}">${s.toFixed(3)}</td><td class="result">${soft[i].toFixed(3)}</td></tr>`;}).join('');
+    mc.innerHTML=`<div class="matrix"><table><tr><td class="header">Token</td><td class="header">Raw Score</td><td class="header">Softmax</td></tr>${rows}</table></div>`;
+    document.getElementById('score-area').style.display='block';renderScoreBars();
+  } else if(step===5){
+    const allT=[...tokens.b0,...tokens.b1,...tokens.b2];
+    const rows=allT.map((t,i)=>{const bi=Math.floor(i/4);const cls=['b0','b1','b2'][Math.min(bi,2)];return`<tr><td class="header">${t}</td><td class="${cls}">w=${(soft[i]||0).toFixed(3)}</td><td class="${cls}">[v...]</td></tr>`;}).join('');
+    mc.innerHTML=`<div class="matrix"><table><tr><td class="header">Token</td><td class="header">Weight</td><td class="header">V vector</td></tr>${rows}</table></div><div class="arrow">→</div><div class="matrix"><table><tr><td class="header">o<sub>i</sub></td><td class="result">Σ w·v = [output]</td></tr></table></div>`;
+    document.getElementById('score-area').style.display='block';renderScoreBars();
+  }
+}
+function renderScoreBars(){
+  const allT=[...tokens.b0,...tokens.b1,...tokens.b2];
+  const colors=[...Array(4).fill('var(--orange)'),...Array(4).fill('var(--green)'),...Array(2).fill('var(--purple)')];
+  document.getElementById('score-bars-content').innerHTML=allT.map((t,i)=>{const w=soft[i]||0;const p=(w*300).toFixed(0);return`<div class="score-row"><div class="score-label">${t}</div><div class="score-bar-wrap"><div class="score-bar" style="width:${p}px;max-width:100%;background:${colors[i]};"></div></div><div class="score-val" style="color:${colors[i]}">${w.toFixed(3)}</div></div>`;}).join('');
+}
+function updateHL(step){
+  for(let i=0;i<6;i++) document.getElementById('step-'+i).classList.toggle('active',i===step);
+  ['phys-b0','phys-b1','phys-b2'].forEach((id,i)=>{const el=document.getElementById(id);el.classList.remove('active','dim');if(step===i+1)el.classList.add('active');else if(step>=1&&step<=3&&step!==i+1)el.classList.add('dim');});
+}
+function goToStep(s){currentStep=s;document.getElementById('score-area').style.display='none';renderMatrix(s);updateHL(s);document.getElementById('step-status').textContent=`Step ${s+1} / 6`;}
+function nextStep(){if(currentStep<5)goToStep(currentStep+1);}
+function prevStep(){if(currentStep>0)goToStep(currentStep-1);}
+function resetAll(){currentStep=-1;document.getElementById('score-area').style.display='none';for(let i=0;i<6;i++)document.getElementById('step-'+i).classList.remove('active');['phys-b0','phys-b1','phys-b2'].forEach(id=>{const el=document.getElementById(id);el.classList.remove('active','dim');});document.getElementById('matrix-content').innerHTML='<div style="color:var(--text-secondary);font-size:13px;padding:20px;">Click "Next" or a step above to start</div>';document.getElementById('step-status').textContent='Step 1 / 6';}
+function syncTheme(){try{const d=window.parent.document.body.classList.contains('dark')||window.parent.document.documentElement.classList.contains('dark');document.body.classList.toggle('dark',d);}catch(e){}}
+syncTheme();
+try{new MutationObserver(syncTheme).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['class']});}catch(e){}
+try{new MutationObserver(syncTheme).observe(window.parent.document.body,{attributes:true,attributeFilter:['class']});}catch(e){}
+</script>
+</body>
+</html>

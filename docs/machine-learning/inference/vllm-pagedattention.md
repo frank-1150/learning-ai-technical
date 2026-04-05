@@ -77,7 +77,7 @@ The key change: the attention kernel no longer reads K/V vectors sequentially â€
 ![Figure 5: PagedAttention algorithm illustration (Paper Fig. 5)](./vllm-figures/fig5-pagedattention-blocks.png)
 
 <HtmlVisualization
-  src="/machine-learning/inference/visualizations/paged-attention-computation.html"
+  src="/machine-learning/inference/visualizations/paged-attention-computation-en.html"
   height="560px"
   title="PagedAttention Block-wise Computation"
 />
