@@ -48,13 +48,16 @@ function nav(): DefaultTheme.NavItem[] {
       text: 'AI 应用',
       items: [
         { text: '智能体的原理和操控', link: '/zh/ai-applications/agents/' },
-        { text: '我如何使用 AI？', link: '/zh/ai-applications/how-i-use-ai/' }
+        { text: '我如何使用 AI？', link: '/zh/ai-applications/how-i-use-ai/' },
+        { text: '公司与访谈', link: '/zh/ai-applications/companies/' },
+        { text: 'AI 行业观点', link: '/zh/ai-applications/industry-views/' }
       ]
     },
     {
       text: '机器学习',
       items: [
         { text: '神经网络', link: '/zh/machine-learning/neural-networks/' },
+        { text: "Let's Build GPT (Karpathy)", link: '/zh/machine-learning/build-gpt-karpathy/' },
         { text: '推理优化与硬件', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' }
       ]
     }

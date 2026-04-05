@@ -3,14 +3,14 @@
   "configurations": [
     {
       "name": "VitePress Preview",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "docs:preview"],
-      "port": 4173,
+      "runtimeExecutable": "/opt/homebrew/bin/node",
+      "runtimeArgs": ["node_modules/.bin/vitepress", "dev", "docs"],
+      "port": 5173,
       "autoPort": true
     },
     {
       "name": "VitePress Dev",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "/opt/homebrew/bin/npm",
       "runtimeArgs": ["run", "docs:dev"],
       "port": 5173,
       "autoPort": true

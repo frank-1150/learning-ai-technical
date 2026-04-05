@@ -2,7 +2,13 @@
   "name": "learning-ai-technical",
   "version": "1.0.0",
   "type": "module",
-  "private": true,
+  "description": "A bilingual (zh/en) AI & ML knowledge base — built with VitePress, maintained with LLMs, published on GitHub Pages.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/frank-1150/learning-ai-technical.git"
+  },
+  "homepage": "https://frank-1150.github.io/learning-ai-technical/",
   "scripts": {
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",

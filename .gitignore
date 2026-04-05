@@ -23,3 +23,6 @@ Thumbs.db
 
 # Private content - scripts, tokens, downloaded files (never publish)
 private/
+
+# Private Claude Code skills (keep locally, never publish)
+.claude/commands/zsxq-to-industry-views.md

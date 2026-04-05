@@ -32,6 +32,7 @@ function nav(): DefaultTheme.NavItem[] {
       items: [
         { text: 'Agent Principles & Control', link: '/ai-applications/agents/' },
         { text: 'How I Use AI', link: '/ai-applications/how-i-use-ai/' },
+        { text: 'Companies & Interviews', link: '/ai-applications/companies/' },
         { text: 'AI Industry Views', link: '/ai-applications/industry-views/' }
       ]
     },
