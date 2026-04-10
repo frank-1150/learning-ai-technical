@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pod 完整生命周期时序图</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #6c7086;
+  --surface: #181825;
+  --border: #45475a;
+  --overlay: #313244;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --blue: #89b4fa;
+  --yellow: #f9e2af;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+}
+.light {
+  --bg: #eff1f5;
+  --fg: #4c4f69;
+  --muted: #8c8fa1;
+  --surface: #e6e9ef;
+  --border: #ccd0da;
+  --overlay: #dce0e8;
+  --green: #40a02b;
+  --red: #d20f39;
+  --blue: #1e66f5;
+  --yellow: #df8e1d;
+  --mauve: #8839ef;
+  --peach: #fe640b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  padding: 16px;
+  min-height: 100vh;
+}
+
+h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--blue);
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.layout {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.timeline-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-col {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+/* Timeline */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.phase {
+  display: flex;
+  align-items: stretch;
+  cursor: pointer;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
+  margin-bottom: 2px;
+}
+.phase:hover {
+  border-color: var(--border);
+}
+.phase.active {
+  border-color: var(--blue);
+}
+.phase.error-phase:hover,
+.phase.error-phase.active {
+  border-color: var(--red);
+}
+
+.phase-connector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+  flex-shrink: 0;
+  background: var(--surface);
+  padding: 6px 0;
+}
+.phase-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--overlay);
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+.phase.active .phase-dot {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.phase.error-phase.active .phase-dot {
+  background: var(--red);
+  border-color: var(--red);
+}
+.phase-line {
+  width: 2px;
+  flex: 1;
+  background: var(--border);
+  margin-top: 2px;
+}
+.phase:last-child .phase-line {
+  display: none;
+}
+
+.phase-body {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--overlay);
+}
+.phase.active .phase-body {
+  background: color-mix(in srgb, var(--blue) 12%, var(--overlay));
+}
+.phase.error-phase.active .phase-body {
+  background: color-mix(in srgb, var(--red) 12%, var(--overlay));
+}
+
+.phase-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.phase-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.badge-pending   { background: color-mix(in srgb, var(--yellow) 20%, transparent); color: var(--yellow); border: 1px solid var(--yellow); }
+.badge-init      { background: color-mix(in srgb, var(--mauve) 20%, transparent); color: var(--mauve); border: 1px solid var(--mauve); }
+.badge-running   { background: color-mix(in srgb, var(--green) 20%, transparent); color: var(--green); border: 1px solid var(--green); }
+.badge-ready     { background: color-mix(in srgb, var(--blue) 20%, transparent); color: var(--blue); border: 1px solid var(--blue); }
+.badge-term      { background: color-mix(in srgb, var(--peach) 20%, transparent); color: var(--peach); border: 1px solid var(--peach); }
+.badge-dead      { background: color-mix(in srgb, var(--red) 20%, transparent); color: var(--red); border: 1px solid var(--red); }
+.badge-warn      { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); }
+
+.phase-name {
+  font-weight: 600;
+  font-size: 12px;
+}
+.phase-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Error markers */
+.error-markers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.error-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+  color: var(--red);
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+}
+.warn-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--yellow) 15%, transparent);
+  color: var(--yellow);
+  border: 1px solid color-mix(in srgb, var(--yellow) 40%, transparent);
+}
+
+/* Detail panel */
+.detail-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 300px;
+}
+.detail-empty {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  padding-top: 40px;
+}
+.detail-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--blue);
+}
+.detail-title.red { color: var(--red); }
+.detail-section {
+  margin-bottom: 10px;
+}
+.detail-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.detail-text {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--fg);
+}
+.detail-code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 10px;
+  background: var(--overlay);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-top: 4px;
+  line-height: 1.5;
+  color: var(--green);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.detail-warn {
+  font-size: 11px;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  border-left: 3px solid var(--red);
+  padding: 5px 8px;
+  border-radius: 0 4px 4px 0;
+  line-height: 1.5;
+}
+.detail-tip {
+  font-size: 11px;
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+  border-left: 3px solid var(--green);
+  padding: 5px 8px;
+  border-radius: 0 4px 4px 0;
+  line-height: 1.5;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 8px;
+}
+</style>
+</head>
+<body>
+
+<h2>Pod 完整生命周期时序图</h2>
+
+<div class="layout">
+  <div class="timeline-col">
+    <div class="timeline" id="timeline"></div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> Pending</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--mauve)"></div> Init</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Running</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div> Ready</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--peach)"></div> Terminating</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Dead/Error</div>
+    </div>
+    <div class="hint">点击各阶段查看详情</div>
+  </div>
+  <div class="detail-col">
+    <div class="detail-panel" id="detailPanel">
+      <div class="detail-empty">← 点击左侧阶段<br>查看详细说明</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// 1. All data and function declarations first
+// =====================================================================
+
+const phases = [
+  {
+    id: 'apply',
+    badge: 'PENDING',
+    badgeClass: 'badge-pending',
+    name: 'kubectl apply',
+    subtitle: 'API Server 接收 Pod 定义，写入 etcd',
+    isError: false,
+    errors: [],
+    detail: {
+      title: 'Pod 提交阶段',
+      titleClass: '',
+      what: 'kubectl apply 将 Pod spec 发送给 API Server。API Server 验证 YAML 格式，写入 etcd，然后通知 Scheduler 有新 Pod 需要调度。',
+      code: '$ kubectl apply -f my-pod.yaml\npod/my-pod created\n\n# 查看调度状态\n$ kubectl get pod my-pod\nNAME     READY  STATUS   RESTARTS  AGE\nmy-pod   0/1    Pending  0         2s',
+      tip: '此时 Pod 还未分配节点，STATUS 显示 Pending。',
+      warn: null
+    }
+  },
+  {
+    id: 'schedule',
+    badge: 'PENDING',
+    badgeClass: 'badge-pending',
+    name: '调度器选择节点',
+    subtitle: 'Scheduler 根据资源、亲和性等过滤并排序节点',
+    isError: false,
+    errors: ['调度失败: Insufficient memory'],
+    detail: {
+      title: '调度阶段',
+      titleClass: '',
+      what: 'Scheduler 两阶段选节点：先过滤（Filter）淘汰不满足条件的节点，再打分（Score）选出最优节点。选中后将节点信息写回 Pod spec 的 nodeName 字段。',
+      code: '# 调度失败时查看原因\n$ kubectl describe pod my-pod\nEvents:\n  Warning  FailedScheduling\n  0/3 nodes: insufficient memory.',
+      tip: null,
+      warn: '常见调度失败原因：① 所有节点资源不足 ② nodeSelector/affinity 无匹配节点 ③ taint 未设置对应 toleration'
+    }
+  },
+  {
+    id: 'pull',
+    badge: 'PENDING',
+    badgeClass: 'badge-pending',
+    name: '镜像拉取',
+    subtitle: 'Kubelet 在目标节点拉取容器镜像',
+    isError: false,
+    errors: ['ImagePullBackOff: 仓库不可达'],
+    detail: {
+      title: '镜像拉取阶段',
+      titleClass: '',
+      what: 'Kubelet 在被调度的节点上检查镜像是否存在（取决于 imagePullPolicy），若需要则从仓库拉取。大镜像（如带 CUDA 的 PyTorch 镜像可达 20GB+）会在此阶段耗时较长。',
+      code: '# 查看拉取状态\n$ kubectl describe pod my-pod\nEvents:\n  Normal  Pulling  "Pulling image myapp:v1.2.3"\n  Normal  Pulled   "Successfully pulled image"',
+      tip: '生产建议：使用不可变 tag（非 latest），配合 imagePullPolicy: IfNotPresent 避免每次重连仓库。',
+      warn: 'ImagePullBackOff 原因：① 仓库地址错误 ② 无 imagePullSecret 凭证 ③ 使用 latest + imagePullPolicy:Always 时仓库不可达'
+    }
+  },
+  {
+    id: 'init',
+    badge: 'INIT',
+    badgeClass: 'badge-init',
+    name: 'Init Container 执行',
+    subtitle: '按顺序执行初始化容器，全部成功才继续',
+    isError: false,
+    errors: ['Init:Error / Init:CrashLoopBackOff'],
+    detail: {
+      title: 'Init Container 阶段',
+      titleClass: '',
+      what: 'Init Container 按定义顺序逐一执行，每个必须以退出码 0 成功结束，才会启动下一个。全部完成后，Kubelet 才启动主容器。常用于：等待依赖服务就绪、预下载数据、初始化配置文件。',
+      code: 'spec:\n  initContainers:\n  - name: wait-for-db\n    image: busybox\n    command:\n    - sh\n    - -c\n    - "until nc -z db-service 5432; do\n       echo waiting...; sleep 2; done"\n  - name: download-model\n    image: model-downloader\n    # 下载模型到共享 emptyDir volume',
+      tip: 'Init Container 运行期间，kubectl get pod 显示 STATUS: Init:0/2（0 个已完成，共 2 个）。',
+      warn: 'Init Container 失败会导致 Pod 一直处于 Init 状态。检查：kubectl logs <pod> -c <init-container-name>'
+    }
+  },
+  {
+    id: 'poststart',
+    badge: 'RUNNING',
+    badgeClass: 'badge-running',
+    name: 'postStart 钩子',
+    subtitle: '主容器启动后立即并行执行，完成前 Pod 为 Pending',
+    isError: false,
+    errors: ['PostStart Hook Failed → 主容器被杀'],
+    detail: {
+      title: 'postStart 钩子',
+      titleClass: '',
+      what: 'postStart 在主进程启动后立即触发，与主进程并行运行（不等待主进程就绪）。钩子完成前，容器保持 Waiting 状态（ContainerCreating）。如果钩子失败（非零退出码），Kubelet 会杀死主容器。',
+      code: 'lifecycle:\n  postStart:\n    exec:\n      command:\n      - /bin/sh\n      - -c\n      - "/app/scripts/register.sh"\n\n# 失败时 kubectl describe 可见：\n# Warning FailedPostStartHook\n# "hook exited with code 15"',
+      tip: null,
+      warn: 'postStart 的 stdout/stderr 不出现在 kubectl logs！失败原因只能在 kubectl describe pod 的 Events 中查看。'
+    }
+  },
+  {
+    id: 'readiness',
+    badge: 'RUNNING',
+    badgeClass: 'badge-running',
+    name: 'Readiness Probe 探测',
+    subtitle: '就绪探针通过后，Pod 加入 Service Endpoints',
+    isError: false,
+    errors: ['Readiness Probe 持续失败 → 不接受流量'],
+    detail: {
+      title: 'Readiness Probe',
+      titleClass: '',
+      what: 'Readiness Probe 周期性检测容器是否准备好接受流量。首次通过前（或探针失败时），Pod 不会被加入任何 Service 的 Endpoints，不会接受外部请求。这是防止"应用启动了但还没就绪"导致请求失败的关键机制。',
+      code: 'readinessProbe:\n  httpGet:\n    path: /health/ready\n    port: 8080\n  initialDelaySeconds: 30  # 等待应用启动\n  periodSeconds: 5\n  failureThreshold: 3\n\n# AI 推理场景：模型加载完成后才就绪\n# initialDelaySeconds 可能需要设为 300s+',
+      tip: 'AI 推理服务（vLLM、TGI）模型加载可能需要数分钟，initialDelaySeconds 必须足够大，否则会被反复重启。',
+      warn: null
+    }
+  },
+  {
+    id: 'ready',
+    badge: 'READY',
+    badgeClass: 'badge-ready',
+    name: '接收流量（Running + Ready）',
+    subtitle: 'Pod 加入 Service Endpoints，开始处理请求',
+    isError: false,
+    errors: [],
+    detail: {
+      title: '就绪状态',
+      titleClass: '',
+      what: 'Readiness Probe 首次通过后，Endpoints 控制器将 Pod IP 加入所有匹配 Service 的 Endpoints 对象，kube-proxy 更新 iptables 规则，新请求开始被路由到该 Pod。',
+      code: '$ kubectl get endpoints my-service\nNAME        ENDPOINTS\nmy-service  10.244.1.5:8080,10.244.2.3:8080\n\n# Pod 状态：\n$ kubectl get pod\nNAME    READY  STATUS   RESTARTS  AGE\nmy-pod  1/1    Running  0         45s',
+      tip: 'READY 列的 1/1 表示 1 个容器就绪（分母是总容器数）。这时 Pod 才真正对外服务。',
+      warn: null
+    }
+  },
+  {
+    id: 'sigterm',
+    badge: 'TERM',
+    badgeClass: 'badge-term',
+    name: 'Pod 删除触发 → SIGTERM 发出',
+    subtitle: '两条并行链：Kubelet 发 SIGTERM + Endpoints 控制器摘除',
+    isError: false,
+    errors: [],
+    detail: {
+      title: '删除触发 & SIGTERM',
+      titleClass: '',
+      what: 'kubectl delete pod 触发后，API Server 设置 deletionTimestamp。两条链并行启动：\n① Kubelet 收到通知 → 运行 preStop → 发送 SIGTERM\n② Endpoints 控制器收到通知 → 从 Service Endpoints 摘除 Pod → 通知各节点 kube-proxy → kube-proxy 更新 iptables\n\n关键问题：链 ② 比链 ① 慢！SIGTERM 很可能在 iptables 更新完成之前就已发出，导致应用停止接受连接，但仍有新请求被路由过来。',
+      code: '$ kubectl delete pod my-pod\npod "my-pod" deleted\n\n# Pod 进入 Terminating 状态\n$ kubectl get pod\nNAME    READY  STATUS        RESTARTS  AGE\nmy-pod  1/1    Terminating   0         10m',
+      tip: null,
+      warn: '不要假设"收到 SIGTERM 时可以立即停止接受连接"。iptables 规则更新有传播延迟，此时仍可能收到新请求！'
+    }
+  },
+  {
+    id: 'prestop',
+    badge: 'TERM',
+    badgeClass: 'badge-term',
+    name: 'preStop 钩子执行',
+    subtitle: 'SIGTERM 前的最后清理机会，给 iptables 更新留时间',
+    isError: false,
+    errors: ['preStop 超时 → 仍会发 SIGTERM'],
+    detail: {
+      title: 'preStop 钩子',
+      titleClass: '',
+      what: 'Kubelet 在发送 SIGTERM 前先运行 preStop 钩子。最简单的用法是 sleep 几秒，给 iptables 规则更新传播留出时间。即使 preStop 失败，容器关闭流程也会继续（与 postStart 不同）。',
+      code: '# 最简方案：sleep 等待 iptables 更新\nlifecycle:\n  preStop:\n    exec:\n      command: ["/bin/sh", "-c", "sleep 5"]\n\n# AI 推理方案：通知服务停止接受新请求\nlifecycle:\n  preStop:\n    httpGet:\n      path: /graceful-shutdown\n      port: 8080\nterminationGracePeriodSeconds: 120',
+      tip: '5-10 秒的 preStop sleep 在大多数场景够用。高负载集群中 Endpoints 控制器可能更慢，可适当加大。',
+      warn: null
+    }
+  },
+  {
+    id: 'graceful',
+    badge: 'TERM',
+    badgeClass: 'badge-term',
+    name: '等待正在处理的请求完成',
+    subtitle: '在 terminationGracePeriodSeconds 内等待应用自然退出',
+    isError: false,
+    errors: ['Grace period 不够 → 请求被强制中断'],
+    detail: {
+      title: '优雅关闭等待期',
+      titleClass: '',
+      what: '应用收到 SIGTERM 后的正确关闭顺序：\n① 等待几秒（iptables 传播）\n② 停止接受新连接\n③ 关闭空闲 keep-alive 连接\n④ 等待所有 in-flight 请求完成\n⑤ 退出进程\n\nterminationGracePeriodSeconds（默认 30s）是 Kubelet 在强制 SIGKILL 前等待的总时长（包含 preStop 时间）。',
+      code: '# 根据应用关闭时间设置\nspec:\n  terminationGracePeriodSeconds: 60\n\n# 临时覆盖（测试用）\n$ kubectl delete pod my-pod \\\n  --grace-period=5',
+      tip: 'AI 推理服务处理长输出流式请求时，grace period 可能需要设为 120s+。',
+      warn: '若 grace period 不够，Kubelet 会强制发 SIGKILL，正在处理的请求会被直接中断，客户端收到连接重置错误。'
+    }
+  },
+  {
+    id: 'sigkill',
+    badge: 'DEAD',
+    badgeClass: 'badge-dead',
+    name: 'SIGKILL / 进程退出',
+    subtitle: 'Grace period 到期后强制终止，或应用自然退出',
+    isError: false,
+    errors: [],
+    detail: {
+      title: 'Pod 终止',
+      titleClass: '',
+      what: '有两种结束方式：\n① 应用在 grace period 内自然退出 → Kubelet 通知 API Server，Pod 资源被删除\n② Grace period 超时 → Kubelet 发 SIGKILL 强制杀进程\n\n所有容器退出后，Kubelet 通知 API Server，API Server 从 etcd 中删除 Pod 资源。',
+      code: '# Pod 已被删除\n$ kubectl get pod my-pod\nError from server (NotFound): pods "my-pod" not found\n\n# 查看终止原因（如果配置了 terminationMessagePath）\n$ kubectl describe pod my-pod\n# Last State: Terminated\n#   Message: I\'ve had enough',
+      tip: 'StatefulSet 的 Pod 不要用 --force --grace-period=0 强制删除！这会导致两个相同 Pod 同时运行，可能损坏数据。',
+      warn: null
+    }
+  }
+];
+
+let activeId = null;
+
+function renderDetail(phase) {
+  const d = phase.detail;
+  let html = `<div class="detail-title ${d.titleClass}">${d.title}</div>`;
+
+  html += `<div class="detail-section">
+    <div class="detail-section-label">说明</div>
+    <div class="detail-text">${d.what.replace(/\n/g, '<br>')}</div>
+  </div>`;
+
+  if (d.code) {
+    html += `<div class="detail-section">
+      <div class="detail-section-label">示例</div>
+      <div class="detail-code">${d.code}</div>
+    </div>`;
+  }
+
+  if (d.tip) {
+    html += `<div class="detail-tip">${d.tip}</div>`;
+  }
+
+  if (d.warn) {
+    html += `<div class="detail-warn" style="margin-top:8px">${d.warn}</div>`;
+  }
+
+  document.getElementById('detailPanel').innerHTML = html;
+}
+
+function renderTimeline() {
+  const container = document.getElementById('timeline');
+  container.innerHTML = '';
+
+  phases.forEach(phase => {
+    const el = document.createElement('div');
+    const isActive = activeId === phase.id;
+    const hasErrors = phase.errors.length > 0;
+
+    el.className = `phase${isActive ? ' active' : ''}${hasErrors ? ' error-phase' : ''}`;
+    el.dataset.id = phase.id;
+
+    let errorsHtml = '';
+    if (hasErrors) {
+      errorsHtml = `<div class="error-markers">
+        ${phase.errors.map(e => `<span class="error-tag">${e}</span>`).join('')}
+      </div>`;
+    }
+
+    el.innerHTML = `
+      <div class="phase-connector">
+        <div class="phase-dot"></div>
+        <div class="phase-line"></div>
+      </div>
+      <div class="phase-body">
+        <div class="phase-header">
+          <span class="phase-badge ${phase.badgeClass}">${phase.badge}</span>
+          <span class="phase-name">${phase.name}</span>
+        </div>
+        <div class="phase-subtitle">${phase.subtitle}</div>
+        ${errorsHtml}
+      </div>
+    `;
+
+    el.addEventListener('click', () => {
+      if (activeId === phase.id) {
+        activeId = null;
+        document.getElementById('detailPanel').innerHTML =
+          '<div class="detail-empty">← 点击左侧阶段<br>查看详细说明</div>';
+      } else {
+        activeId = phase.id;
+        renderDetail(phase);
+      }
+      renderTimeline();
+    });
+
+    container.appendChild(el);
+  });
+}
+
+function render() {
+  renderTimeline();
+}
+
+// =====================================================================
+// 2. Theme sync and initial render LAST
+// =====================================================================
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

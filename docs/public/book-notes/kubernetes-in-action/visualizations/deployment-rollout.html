@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Deployment 滚动更新动画</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #6c7086;
+  --surface: #181825;
+  --border: #45475a;
+  --overlay: #313244;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --blue: #89b4fa;
+  --yellow: #f9e2af;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+}
+.light {
+  --bg: #eff1f5;
+  --fg: #4c4f69;
+  --muted: #8c8fa1;
+  --surface: #e6e9ef;
+  --border: #ccd0da;
+  --overlay: #dce0e8;
+  --green: #40a02b;
+  --red: #d20f39;
+  --blue: #1e66f5;
+  --yellow: #df8e1d;
+  --mauve: #8839ef;
+  --peach: #fe640b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  padding: 16px;
+  min-height: 100vh;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--blue);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.rs-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.rs-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.rs-v1 .rs-title { color: var(--blue); }
+.rs-v2 .rs-title { color: var(--green); }
+
+.rs-stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.rs-stats span { display: flex; flex-direction: column; }
+.rs-stats .val { font-size: 20px; font-weight: 700; color: var(--fg); line-height: 1; }
+
+.pods-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 36px;
+  align-items: center;
+}
+
+.pod {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  transition: all 0.35s ease;
+  position: relative;
+}
+
+.pod.v1-running  { background: rgba(137,180,250,0.15); border-color: var(--blue);  color: var(--blue); }
+.pod.v2-running  { background: rgba(166,227,161,0.15); border-color: var(--green); color: var(--green); }
+.pod.pending     { background: rgba(249,226,175,0.15); border-color: var(--yellow); color: var(--yellow); animation: pulse 1s infinite; }
+.pod.terminating { background: rgba(243,139,168,0.1);  border-color: var(--red);   color: var(--red);   opacity: 0.5; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.pod-label {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.status-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.blue   { background: var(--blue); }
+.status-dot.green  { background: var(--green); }
+.status-dot.yellow { background: var(--yellow); animation: pulse 1s infinite; }
+.status-dot.red    { background: var(--red); }
+
+.controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.btn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--overlay);
+  color: var(--fg);
+}
+.btn:hover { filter: brightness(1.15); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--blue); color: var(--surface); border-color: var(--blue); }
+.btn.danger  { background: var(--red);  color: var(--surface); border-color: var(--red); }
+.btn.success { background: var(--green); color: var(--surface); border-color: var(--green); }
+
+.config-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.config-row label { color: var(--muted); margin-right: 4px; }
+.config-row select {
+  background: var(--overlay);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot {
+  width: 10px; height: 10px; border-radius: 3px; border: 2px solid;
+}
+.ld-v1      { border-color: var(--blue);   background: rgba(137,180,250,0.2); }
+.ld-v2      { border-color: var(--green);  background: rgba(166,227,161,0.2); }
+.ld-pending { border-color: var(--yellow); background: rgba(249,226,175,0.2); }
+.ld-term    { border-color: var(--red);    background: rgba(243,139,168,0.1); }
+</style>
+</head>
+<body>
+
+<h2>Deployment 滚动更新动画</h2>
+
+<div class="config-row">
+  <span><label>maxSurge:</label><select id="selSurge"><option value="0">0</option><option value="1" selected>1</option><option value="2">2</option></select></span>
+  <span><label>maxUnavailable:</label><select id="selUnavail"><option value="0" selected>0</option><option value="1">1</option><option value="2">2</option></select></span>
+  <span><label>速度:</label><select id="selSpeed"><option value="2000">慢</option><option value="1000" selected>正常</option><option value="400">快</option></select></span>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot ld-v1"></div> v1 Running</div>
+  <div class="legend-item"><div class="legend-dot ld-v2"></div> v2 Running</div>
+  <div class="legend-item"><div class="legend-dot ld-pending"></div> Pending/Starting</div>
+  <div class="legend-item"><div class="legend-dot ld-term"></div> Terminating</div>
+</div>
+
+<div class="layout">
+  <div class="rs-panel rs-v1">
+    <div class="rs-title">ReplicaSet v1</div>
+    <div class="rs-stats">
+      <span><span class="val" id="rs1desired">3</span>desired</span>
+      <span><span class="val" id="rs1ready">3</span>ready</span>
+    </div>
+    <div class="pods-row" id="pods-v1"></div>
+  </div>
+  <div class="rs-panel rs-v2">
+    <div class="rs-title">ReplicaSet v2</div>
+    <div class="rs-stats">
+      <span><span class="val" id="rs2desired">0</span>desired</span>
+      <span><span class="val" id="rs2ready">0</span>ready</span>
+    </div>
+    <div class="pods-row" id="pods-v2"></div>
+  </div>
+</div>
+
+<div class="status-bar" id="statusBar">
+  <div class="status-dot blue" id="statusDot"></div>
+  <span id="statusText">初始状态：3 个 v1 Pod 正在运行</span>
+</div>
+
+<div class="controls">
+  <button class="btn primary" id="btnStart" onclick="startRollout()">开始更新 v1 → v2</button>
+  <button class="btn danger"  id="btnRollback" onclick="startRollback()" disabled>回滚</button>
+  <button class="btn"         id="btnReset"    onclick="resetAll()">重置</button>
+</div>
+
+<script>
+// ─── 1. 所有 const/let/function 声明 ───────────────────────────────────────
+
+const DESIRED = 3;
+
+let v1Pods = [];      // each: { id, state }
+let v2Pods = [];
+let animating = false;
+let currentVersion = 1; // 1 = showing v1, 2 = showing v2 (after full rollout)
+
+function getMaxSurge()    { return parseInt(document.getElementById('selSurge').value); }
+function getMaxUnavail()  { return parseInt(document.getElementById('selUnavail').value); }
+function getStepDelay()   { return parseInt(document.getElementById('selSpeed').value); }
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function countState(pods, state) { return pods.filter(p => p.state === state).length; }
+function countAvail(pods) { return countState(pods, 'running'); }
+
+function renderPods() {
+  const c1 = document.getElementById('pods-v1');
+  const c2 = document.getElementById('pods-v2');
+
+  c1.innerHTML = '';
+  c2.innerHTML = '';
+
+  v1Pods.forEach(p => {
+    const el = document.createElement('div');
+    el.className = `pod ${p.state === 'running' ? 'v1-running' : p.state === 'terminating' ? 'terminating' : 'pending'}`;
+    el.textContent = 'v1';
+    c1.appendChild(el);
+  });
+
+  v2Pods.forEach(p => {
+    const el = document.createElement('div');
+    el.className = `pod ${p.state === 'running' ? 'v2-running' : 'pending'}`;
+    el.textContent = 'v2';
+    c2.appendChild(el);
+  });
+
+  document.getElementById('rs1desired').textContent = v1Pods.filter(p => p.state !== 'terminating').length;
+  document.getElementById('rs1ready').textContent   = countState(v1Pods, 'running');
+  document.getElementById('rs2desired').textContent = v2Pods.length;
+  document.getElementById('rs2ready').textContent   = countState(v2Pods, 'running');
+}
+
+function setStatus(text, dotClass) {
+  document.getElementById('statusText').textContent = text;
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + dotClass;
+}
+
+function setButtons(rolling) {
+  document.getElementById('btnStart').disabled    = rolling || currentVersion === 2;
+  document.getElementById('btnRollback').disabled = rolling || currentVersion === 1;
+  document.getElementById('btnReset').disabled    = rolling;
+}
+
+function initState() {
+  v1Pods = [
+    { id: 'v1-a', state: 'running' },
+    { id: 'v1-b', state: 'running' },
+    { id: 'v1-c', state: 'running' },
+  ];
+  v2Pods = [];
+  currentVersion = 1;
+  renderPods();
+  setStatus('初始状态：3 个 v1 Pod 正在运行', 'blue');
+  setButtons(false);
+}
+
+async function performRollout(fromVersion, toVersion) {
+  animating = true;
+  setButtons(true);
+
+  const maxSurge   = getMaxSurge();
+  const maxUnavail = getMaxUnavail();
+  const delay      = getStepDelay();
+
+  // source / target pod lists (references change each direction)
+  const srcPods = fromVersion === 1 ? v1Pods : v2Pods;
+  const tgtPods = fromVersion === 1 ? v2Pods : v1Pods;
+  const tgtLabel = fromVersion === 1 ? 'v2' : 'v1';
+
+  setStatus(`开始滚动更新 v${fromVersion} → v${toVersion}（maxSurge=${maxSurge}, maxUnavailable=${maxUnavail}）`, 'yellow');
+  await sleep(delay);
+
+  let replaced = 0;
+  const total = DESIRED;
+
+  while (replaced < total) {
+    // How many can we create? (total running + pending + new <= DESIRED + maxSurge)
+    const currentTotal = srcPods.filter(p => p.state !== 'terminating').length + tgtPods.length;
+    const canCreate = (DESIRED + maxSurge) - currentTotal;
+
+    // How many can we terminate? (available after termination >= DESIRED - maxUnavail)
+    const srcRunning = countState(srcPods, 'running');
+    const tgtRunning = countState(tgtPods, 'running');
+    const available  = srcRunning + tgtRunning;
+    const canTerminate = available - (DESIRED - maxUnavail);
+
+    if (canCreate <= 0 && canTerminate <= 0) {
+      // wait for pending pods to become running
+      setStatus(`等待新 Pod 就绪…`, 'yellow');
+      await sleep(delay);
+      // simulate pending -> running
+      tgtPods.forEach(p => { if (p.state === 'pending') p.state = 'running'; });
+      renderPods();
+      continue;
+    }
+
+    // Create new pods up to canCreate
+    let created = 0;
+    for (let i = 0; i < canCreate && replaced + created < total; i++) {
+      tgtPods.push({ id: `${tgtLabel}-${Date.now()}-${i}`, state: 'pending' });
+      created++;
+    }
+    if (created > 0) {
+      renderPods();
+      setStatus(`创建 ${created} 个 v${toVersion} Pod（Pending）`, 'yellow');
+      await sleep(delay);
+
+      // Pending → Running
+      tgtPods.forEach(p => { if (p.state === 'pending') p.state = 'running'; });
+      renderPods();
+      setStatus(`${created} 个 v${toVersion} Pod 就绪`, 'green');
+      await sleep(delay * 0.6);
+    }
+
+    // Terminate old pods
+    const toTerm = Math.min(
+      canTerminate > 0 ? canTerminate : 0,
+      srcPods.filter(p => p.state === 'running').length,
+      created || 1
+    );
+
+    let terminated = 0;
+    for (let i = 0; i < srcPods.length && terminated < toTerm; i++) {
+      if (srcPods[i].state === 'running') {
+        srcPods[i].state = 'terminating';
+        terminated++;
+      }
+    }
+    if (terminated > 0) {
+      renderPods();
+      setStatus(`终止 ${terminated} 个 v${fromVersion} Pod`, 'red');
+      await sleep(delay * 0.7);
+
+      // Remove terminating pods
+      const before = srcPods.length;
+      for (let i = srcPods.length - 1; i >= 0; i--) {
+        if (srcPods[i].state === 'terminating') {
+          srcPods.splice(i, 1);
+        }
+      }
+      replaced += (before - srcPods.length);
+      renderPods();
+      await sleep(delay * 0.3);
+    } else {
+      // Nothing to do this round, wait
+      await sleep(delay * 0.5);
+    }
+  }
+
+  currentVersion = toVersion;
+  setStatus(`更新完成！${DESIRED} 个 v${toVersion} Pod 全部运行中`, 'green');
+  animating = false;
+  setButtons(false);
+}
+
+async function startRollout() {
+  if (animating) return;
+  await performRollout(1, 2);
+}
+
+async function startRollback() {
+  if (animating) return;
+  setStatus('执行回滚 v2 → v1…', 'yellow');
+  await performRollout(2, 1);
+}
+
+function resetAll() {
+  if (animating) return;
+  initState();
+}
+
+// ─── 2. Theme sync LAST ────────────────────────────────────────────────────
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  // no render needed, CSS vars handle it
+}
+
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+
+// Init on load
+initState();
+</script>
+</body>
+</html>

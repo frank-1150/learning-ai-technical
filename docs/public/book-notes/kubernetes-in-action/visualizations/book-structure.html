@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes in Action — 全书结构</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #6c7086;
+  --surface: #181825;
+  --border: #45475a;
+  --overlay: #313244;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --blue: #89b4fa;
+  --yellow: #f9e2af;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+  --teal: #94e2d5;
+  --sky: #89dceb;
+}
+.light {
+  --bg: #eff1f5;
+  --fg: #4c4f69;
+  --muted: #8c8fa1;
+  --surface: #e6e9ef;
+  --border: #ccd0da;
+  --overlay: #dce0e8;
+  --green: #40a02b;
+  --red: #d20f39;
+  --blue: #1e66f5;
+  --yellow: #df8e1d;
+  --mauve: #8839ef;
+  --peach: #fe640b;
+  --teal: #179299;
+  --sky: #04a5e5;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  padding: 16px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 4px;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.part-group {
+  margin-bottom: 12px;
+}
+
+.part-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--overlay);
+  border-radius: 6px 6px 0 0;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.part-header:hover {
+  background: var(--surface);
+}
+
+.part-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.part-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.part-name {
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.part-chapters {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.toggle-icon {
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 0.2s;
+}
+
+.part-group.collapsed .toggle-icon {
+  transform: rotate(-90deg);
+}
+
+.articles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+}
+
+.part-group.collapsed .articles-grid {
+  display: none;
+}
+
+.article-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  transition: border-color 0.15s, transform 0.1s;
+  cursor: default;
+}
+
+.article-card:hover {
+  border-color: var(--blue);
+  transform: translateY(-1px);
+}
+
+.article-num {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.article-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.chapter-range {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.footer-note {
+  margin-top: 12px;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+</style>
+</head>
+<body>
+<script>
+// ── 1. Data & helpers ─────────────────────────────────────────────────────────
+
+const PARTS = [
+  {
+    label: "Part 1",
+    name: "Overview — 容器与 K8s 初体验",
+    chapters: "Ch1–2",
+    color: "#89b4fa",   // blue
+    colorLight: "#1e66f5",
+    articles: [
+      {
+        num: "文章 01",
+        title: "容器化与 K8s 全局观",
+        chapters: "Ch1–2",
+        tags: ["容器技术演进", "K8s 架构", "Docker", "kubectl 入门"]
+      }
+    ]
+  },
+  {
+    label: "Part 2",
+    name: "Core Concepts — 核心概念",
+    chapters: "Ch3–10",
+    color: "#a6e3a1",   // green
+    colorLight: "#40a02b",
+    articles: [
+      {
+        num: "文章 02",
+        title: "核心工作负载：Pod 与副本控制",
+        chapters: "Ch3–4",
+        tags: ["Pod", "ReplicaSet", "DaemonSet", "Job / CronJob"]
+      },
+      {
+        num: "文章 03",
+        title: "网络与服务发现",
+        chapters: "Ch5",
+        tags: ["Service", "Ingress", "DNS", "kube-proxy"]
+      },
+      {
+        num: "文章 04",
+        title: "持久化存储",
+        chapters: "Ch6",
+        tags: ["Volumes", "PV / PVC", "StorageClass", "动态供给"]
+      },
+      {
+        num: "文章 05",
+        title: "配置、密钥与应用部署",
+        chapters: "Ch7–8–9",
+        tags: ["ConfigMap", "Secret", "Downward API", "Deployment"]
+      },
+      {
+        num: "文章 06",
+        title: "有状态应用与内部架构",
+        chapters: "Ch10–11",
+        tags: ["StatefulSet", "etcd", "Scheduler", "Controller Manager"]
+      }
+    ]
+  },
+  {
+    label: "Part 3",
+    name: "Beyond the Basics — 深入进阶",
+    chapters: "Ch11–18",
+    color: "#cba6f7",   // mauve
+    colorLight: "#8839ef",
+    articles: [
+      {
+        num: "文章 07",
+        title: "安全体系",
+        chapters: "Ch12–13",
+        tags: ["RBAC", "ServiceAccount", "SecurityContext", "NetworkPolicy"]
+      },
+      {
+        num: "文章 08",
+        title: "资源管理与调度",
+        chapters: "Ch14–16",
+        tags: ["requests/limits", "HPA", "taints/tolerations", "节点亲和性"]
+      },
+      {
+        num: "文章 09",
+        title: "生产最佳实践与扩展",
+        chapters: "Ch17–18",
+        tags: ["Pod 生命周期", "CRD", "Service Catalog", "CI/CD"]
+      }
+    ]
+  }
+];
+
+function tagStyle(color) {
+  return `background:${color}22; color:${color}; border-color:${color}44;`;
+}
+
+function render() {
+  const isLight = document.body.classList.contains('light');
+
+  let html = `<h1>Kubernetes in Action — 全书结构导览</h1>
+<p class="subtitle">Marko Lukša · Manning · 18 章 · 9 篇阅读笔记</p>`;
+
+  PARTS.forEach((part, pi) => {
+    const color = isLight ? part.colorLight : part.color;
+    html += `<div class="part-group" id="part-${pi}">
+  <div class="part-header" onclick="togglePart(${pi})">
+    <span class="part-dot" style="background:${color}"></span>
+    <span class="part-label">${part.label}</span>
+    <span class="part-name">${part.name}</span>
+    <span class="part-chapters">${part.chapters}</span>
+    <span class="toggle-icon">▼</span>
+  </div>
+  <div class="articles-grid">`;
+
+    part.articles.forEach(a => {
+      html += `<div class="article-card">
+    <div class="article-num">${a.num}</div>
+    <div class="article-title">${a.title}</div>
+    <div class="chapter-range">${a.chapters}</div>
+    <div class="tags">`;
+      a.tags.forEach(t => {
+        html += `<span class="tag" style="${tagStyle(color)}">${t}</span>`;
+      });
+      html += `</div></div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  html += `<p class="footer-note">点击各 Part 标题可折叠 · 悬停卡片高亮</p>`;
+  document.body.innerHTML = html;
+}
+
+function togglePart(idx) {
+  const el = document.getElementById(`part-${idx}`);
+  if (el) el.classList.toggle('collapsed');
+}
+
+// ── 2. Theme sync & init (MUST be last) ──────────────────────────────────────
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

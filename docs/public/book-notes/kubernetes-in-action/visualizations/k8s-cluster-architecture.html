@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes 集群架构交互图</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --fg: #cdd6f4;
+    --muted: #6c7086;
+    --surface: #181825;
+    --border: #45475a;
+    --overlay: #313244;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    --blue: #89b4fa;
+    --yellow: #f9e2af;
+    --mauve: #cba6f7;
+    --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5;
+    --fg: #4c4f69;
+    --muted: #8c8fa1;
+    --surface: #e6e9ef;
+    --border: #ccd0da;
+    --overlay: #dce0e8;
+    --green: #40a02b;
+    --red: #d20f39;
+    --blue: #1e66f5;
+    --yellow: #df8e1d;
+    --mauve: #8839ef;
+    --peach: #fe640b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    padding: 16px;
+    min-height: 100vh;
+  }
+
+  h2 {
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 14px;
+    letter-spacing: 0.02em;
+  }
+
+  .cluster-wrapper {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .plane-box {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+  }
+
+  .plane-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .control-plane .plane-title { color: var(--mauve); }
+  .worker-node .plane-title { color: var(--green); }
+
+  .component-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .component {
+    background: var(--overlay);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 10px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    position: relative;
+  }
+
+  .component:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  .component.active {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.25);
+  }
+
+  .component-name {
+    font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 3px;
+  }
+
+  .component-tag {
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .api-server .component-name { color: var(--blue); }
+  .etcd .component-name { color: var(--yellow); }
+  .scheduler .component-name { color: var(--green); }
+  .controller-manager .component-name { color: var(--peach); }
+  .kubelet .component-name { color: var(--green); }
+  .kube-proxy .component-name { color: var(--mauve); }
+  .container-runtime .component-name { color: var(--blue); }
+
+  .pod-area {
+    margin-top: 8px;
+    background: var(--overlay);
+    border: 1.5px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px;
+  }
+
+  .pod-area-title {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .pods-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .pod {
+    background: var(--surface);
+    border: 1px solid var(--green);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .pod:hover {
+    background: var(--overlay);
+    border-color: var(--green);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  .pod-label { color: var(--green); font-weight: 600; }
+  .pod-ip { color: var(--muted); font-size: 10px; }
+
+  .info-panel {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    min-height: 72px;
+  }
+
+  .info-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--blue);
+  }
+
+  .info-desc {
+    font-size: 12px;
+    color: var(--fg);
+    line-height: 1.6;
+  }
+
+  .info-desc code {
+    background: var(--overlay);
+    border-radius: 3px;
+    padding: 0 4px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--peach);
+  }
+
+  .flow-section {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+
+  .flow-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .flow-steps {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    overflow-x: auto;
+  }
+
+  .flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .flow-bubble {
+    background: var(--overlay);
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: default;
+    transition: all 0.15s;
+  }
+
+  .flow-bubble:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+  }
+
+  .flow-bubble.user { border-color: var(--peach); color: var(--peach); }
+  .flow-bubble.api { border-color: var(--blue); color: var(--blue); }
+  .flow-bubble.scheduler { border-color: var(--green); color: var(--green); }
+  .flow-bubble.kubelet { border-color: var(--mauve); color: var(--mauve); }
+  .flow-bubble.runtime { border-color: var(--yellow); color: var(--yellow); }
+
+  .flow-step-label {
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 3px;
+    text-align: center;
+    max-width: 70px;
+    line-height: 1.3;
+  }
+
+  .flow-arrow {
+    flex-shrink: 0;
+    color: var(--border);
+    font-size: 16px;
+    padding: 0 4px;
+    margin-top: -12px;
+  }
+
+  .hint {
+    text-align: center;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+
+<h2>Kubernetes 集群架构</h2>
+
+<div id="info-panel" class="info-panel">
+  <div class="info-title" id="info-title">点击任意组件查看详情</div>
+  <div class="info-desc" id="info-desc">K8s 集群由 Control Plane（控制平面）和 Worker Nodes（工作节点）组成。Control Plane 负责调度和管理整个集群，Worker Nodes 运行实际的容器化应用。</div>
+</div>
+
+<div class="cluster-wrapper">
+  <!-- Control Plane -->
+  <div class="plane-box control-plane">
+    <div class="plane-title">Control Plane（控制平面）</div>
+    <div class="component-grid">
+      <div class="component api-server" onclick="showInfo('api-server')">
+        <div class="component-name">API Server</div>
+        <div class="component-tag">RESTful 入口</div>
+      </div>
+      <div class="component etcd" onclick="showInfo('etcd')">
+        <div class="component-name">etcd</div>
+        <div class="component-tag">分布式存储</div>
+      </div>
+      <div class="component scheduler" onclick="showInfo('scheduler')">
+        <div class="component-name">Scheduler</div>
+        <div class="component-tag">调度决策</div>
+      </div>
+      <div class="component controller-manager" onclick="showInfo('controller-manager')">
+        <div class="component-name">Controller Manager</div>
+        <div class="component-tag">状态调和</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Worker Node -->
+  <div class="plane-box worker-node">
+    <div class="plane-title">Worker Node（工作节点）</div>
+    <div class="component-grid">
+      <div class="component kubelet" onclick="showInfo('kubelet')">
+        <div class="component-name">Kubelet</div>
+        <div class="component-tag">节点代理</div>
+      </div>
+      <div class="component kube-proxy" onclick="showInfo('kube-proxy')">
+        <div class="component-name">kube-proxy</div>
+        <div class="component-tag">网络规则</div>
+      </div>
+      <div class="component container-runtime" onclick="showInfo('container-runtime')" style="grid-column: 1 / -1;">
+        <div class="component-name">Container Runtime</div>
+        <div class="component-tag">Docker / containerd / CRI-O</div>
+      </div>
+    </div>
+    <div class="pod-area">
+      <div class="pod-area-title">运行中的 Pods</div>
+      <div class="pods-row">
+        <div class="pod" onclick="showInfo('pod')">
+          <div class="pod-label">Pod A</div>
+          <div class="pod-ip">10.1.0.1</div>
+        </div>
+        <div class="pod" onclick="showInfo('pod')">
+          <div class="pod-label">Pod B</div>
+          <div class="pod-ip">10.1.0.2</div>
+        </div>
+        <div class="pod" onclick="showInfo('pod')">
+          <div class="pod-label">Pod C</div>
+          <div class="pod-ip">10.1.0.3</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- kubectl flow -->
+<div class="flow-section">
+  <div class="flow-title">kubectl 命令如何流经各组件</div>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="flow-bubble user">用户 kubectl</div>
+      <div class="flow-step-label">发送请求</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="flow-bubble api">API Server</div>
+      <div class="flow-step-label">认证 + 存储</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="flow-bubble scheduler">Scheduler</div>
+      <div class="flow-step-label">选择目标节点</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="flow-bubble kubelet">Kubelet</div>
+      <div class="flow-step-label">通知目标节点</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="flow-bubble runtime">Container Runtime</div>
+      <div class="flow-step-label">拉取镜像 + 启动容器</div>
+    </div>
+  </div>
+</div>
+
+<div class="hint">点击组件查看职责说明 · 箭头显示 kubectl 请求流向</div>
+
+<script>
+// 1. All const/let declarations and data first
+const componentData = {
+  'api-server': {
+    title: 'API Server — 集群的唯一入口',
+    desc: '所有对集群的操作都通过 API Server 进行。它提供 RESTful API，负责认证（Authentication）、授权（Authorization，基于 RBAC）和数据验证。其他所有组件（Scheduler、Controller Manager、Kubelet）都通过 API Server 通信，不直接相互访问。<code>kubectl get pods</code> 本质上是向 API Server 发送 GET 请求。'
+  },
+  'etcd': {
+    title: 'etcd — 集群的记忆',
+    desc: '分布式键值存储，保存整个集群的配置和状态数据。所有 Pod 定义、Service 配置、节点信息都持久化在 etcd 中。这是集群的"单一事实来源（Single Source of Truth）"。etcd 采用 Raft 共识算法，通常以 3 或 5 个副本运行以保证高可用。API Server 是唯一直接读写 etcd 的组件。'
+  },
+  'scheduler': {
+    title: 'Scheduler — 智能调度决策者',
+    desc: '当新的 Pod 需要运行时，Scheduler 负责决定将它放到哪个 Worker Node 上。调度时综合考虑：节点可用资源（CPU、内存、GPU）、Pod 资源请求（requests/limits）、节点亲和性（affinity）、污点（taints）等规则。选定节点后，将结果写入 etcd（通过 API Server），对应节点的 Kubelet 看到后执行实际的容器创建。'
+  },
+  'controller-manager': {
+    title: 'Controller Manager — 声明式系统的执行引擎',
+    desc: '运行多个控制器（Controller），每个控制器通过不断对比"期望状态（desired state）"和"实际状态（actual state）"来驱动集群收敛到期望状态。例如：ReplicaSet Controller 确保 Pod 副本数正确；Node Controller 处理节点故障；Endpoint Controller 维护 Service 到 Pod 的映射。这就是 K8s 的 Reconciliation Loop 模式。'
+  },
+  'kubelet': {
+    title: 'Kubelet — Worker Node 的管理员',
+    desc: '运行在每个 Worker Node 上的代理，与 API Server 保持长连接（通过 watch 机制）。当 Scheduler 将 Pod 分配到本节点时，Kubelet 收到通知，调用 Container Runtime（如 Docker/containerd）来拉取镜像并启动容器。它还持续监控容器健康状态，上报给 API Server，并在容器崩溃时重启它。'
+  },
+  'kube-proxy': {
+    title: 'kube-proxy — Service 的网络实现者',
+    desc: '运行在每个 Worker Node 上的网络代理。它监听 API Server 上 Service 和 Endpoints 对象的变化，并维护本节点的 iptables 或 IPVS 规则。当请求到达 Service 的虚拟 IP（ClusterIP）时，kube-proxy 设置的规则将流量转发到其中一个后端 Pod——这就是 K8s 服务发现和负载均衡的底层实现。'
+  },
+  'container-runtime': {
+    title: 'Container Runtime — 容器的实际运行者',
+    desc: 'Kubelet 通过 CRI（Container Runtime Interface）调用 Container Runtime 来管理容器的生命周期：拉取镜像、创建和启动容器、停止和删除容器。常见的 Runtime 包括 Docker（早期）、containerd（目前最广泛）、CRI-O。K8s 1.24 起移除了对 Docker 的直接支持，改为通过 containerd 或其他 CRI 兼容实现。'
+  },
+  'pod': {
+    title: 'Pod — K8s 的基本调度单位',
+    desc: 'Pod 是一组紧密相关容器的集合，共享同一个网络命名空间（即相同的 IP 和端口空间）和存储卷。每个 Pod 有自己的 IP 地址，但这是集群内部 IP，集群外无法直接访问。Pod 是临时的（ephemeral）——它可能随时因节点故障、被驱逐或滚动更新而消失，每次重建后 IP 会变化。这就是为什么需要 Service 来提供稳定的访问入口。'
+  }
+};
+
+let activeEl = null;
+
+function showInfo(key) {
+  const data = componentData[key];
+  if (!data) return;
+
+  document.getElementById('info-title').textContent = data.title;
+  document.getElementById('info-desc').innerHTML = data.desc;
+
+  // Deactivate previous
+  if (activeEl) activeEl.classList.remove('active');
+
+  // Find and activate clicked element
+  const selector = '.' + key.replace('-', '-') + ', [onclick="showInfo(\'' + key + '\')"]';
+  const clickedEl = document.querySelector('[onclick="showInfo(\'' + key + '\')"]');
+  if (clickedEl) {
+    clickedEl.classList.add('active');
+    activeEl = clickedEl;
+  }
+}
+
+// 2. Theme sync and initial render LAST
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+}
+
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

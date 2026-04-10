@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RBAC 权限模型交互图</title>
+<style>
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --surface: #181825;
+    --border: #45475a; --overlay: #313244; --green: #a6e3a1; --red: #f38ba8;
+    --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --surface: #e6e9ef;
+    --border: #ccd0da; --overlay: #dce0e8; --green: #40a02b; --red: #d20f39;
+    --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    padding: 16px;
+    min-height: 100vh;
+  }
+
+  h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--blue);
+    margin-bottom: 12px;
+    letter-spacing: 0.3px;
+  }
+
+  /* Scenario tabs */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { border-color: var(--blue); color: var(--fg); }
+  .tab-btn.active { background: var(--blue); color: var(--bg); border-color: var(--blue); font-weight: 600; }
+
+  /* Main layout: 3 columns */
+  .rbac-grid {
+    display: grid;
+    grid-template-columns: 1fr 40px 1fr 40px 1fr;
+    gap: 0;
+    align-items: start;
+  }
+
+  .col-header {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Arrow columns */
+  .arrow-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-top: 32px;
+  }
+  .arrow {
+    font-size: 20px;
+    color: var(--muted);
+    transition: color 0.2s;
+  }
+  .arrow.active { color: var(--blue); }
+
+  /* Cards */
+  .subject-card, .binding-card, .role-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+    position: relative;
+  }
+  .subject-card:hover { border-color: var(--green); transform: translateX(2px); }
+  .subject-card.active { border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--surface)); box-shadow: 0 0 0 1px var(--green); }
+
+  .binding-card.active { border-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 10%, var(--surface)); }
+  .role-card.active { border-color: var(--mauve); background: color-mix(in srgb, var(--mauve) 10%, var(--surface)); }
+
+  .card-icon { font-size: 16px; margin-bottom: 4px; }
+  .card-name { font-weight: 600; font-size: 12px; color: var(--fg); }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* Badge */
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-top: 4px;
+  }
+  .badge-ns { background: color-mix(in srgb, var(--blue) 20%, transparent); color: var(--blue); }
+  .badge-cluster { background: color-mix(in srgb, var(--peach) 20%, transparent); color: var(--peach); }
+
+  /* Rules inside role card */
+  .rules-list { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+  .rule-item { font-size: 11px; color: var(--muted); margin-bottom: 3px; display: flex; gap: 6px; align-items: flex-start; }
+  .rule-resource { color: var(--fg); font-weight: 500; min-width: 80px; }
+  .verb-tag {
+    display: inline-block; font-size: 10px; padding: 1px 5px;
+    border-radius: 3px; margin: 0 2px 2px 0;
+    background: color-mix(in srgb, var(--green) 15%, transparent);
+    color: var(--green);
+    font-weight: 600;
+  }
+  .verb-tag.write {
+    background: color-mix(in srgb, var(--peach) 15%, transparent);
+    color: var(--peach);
+  }
+  .verb-tag.admin {
+    background: color-mix(in srgb, var(--red) 15%, transparent);
+    color: var(--red);
+  }
+
+  /* Empty state */
+  .empty-hint {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 20px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+</style>
+</head>
+<body>
+
+<h2>RBAC 权限模型 — 点击 Subject 查看权限链路</h2>
+
+<div class="tabs" id="tabs">
+  <button class="tab-btn active" data-scenario="developer">开发者</button>
+  <button class="tab-btn" data-scenario="monitoring">监控服务</button>
+  <button class="tab-btn" data-scenario="cicd">CI/CD</button>
+</div>
+
+<div class="rbac-grid">
+  <!-- Column 1: Subjects -->
+  <div>
+    <div class="col-header">Subjects（主体）</div>
+    <div id="subjects-col"></div>
+  </div>
+
+  <!-- Arrow 1 -->
+  <div class="arrow-col">
+    <span class="arrow" id="arrow1">→</span>
+  </div>
+
+  <!-- Column 2: Bindings -->
+  <div>
+    <div class="col-header">Bindings（绑定）</div>
+    <div id="bindings-col"></div>
+  </div>
+
+  <!-- Arrow 2 -->
+  <div class="arrow-col">
+    <span class="arrow" id="arrow2">→</span>
+  </div>
+
+  <!-- Column 3: Roles -->
+  <div>
+    <div class="col-header">Roles（角色 + 规则）</div>
+    <div id="roles-col"></div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Subject 选中</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> Binding 激活</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--mauve)"></div> Role / ClusterRole</div>
+  <div class="legend-item"><span class="verb-tag" style="margin:0">get</span> 只读 verb</div>
+  <div class="legend-item"><span class="verb-tag write" style="margin:0">create</span> 写 verb</div>
+  <div class="legend-item"><span class="verb-tag admin" style="margin:0">*</span> 全权限</div>
+</div>
+
+<script>
+// ─── 1. All data and function declarations first ───────────────────────────
+
+const SCENARIOS = {
+  developer: {
+    subjects: [
+      { id: 's1', icon: '👤', name: 'alice', sub: 'User', kind: 'User' },
+      { id: 's2', icon: '🤖', name: 'app-sa', sub: 'ServiceAccount · namespace: dev', kind: 'ServiceAccount' },
+    ],
+    bindings: [
+      { id: 'b1', name: 'dev-rolebinding', kind: 'RoleBinding', scope: 'ns', namespace: 'dev', subjectIds: ['s1', 's2'], roleId: 'r1' },
+    ],
+    roles: [
+      {
+        id: 'r1', name: 'pod-reader', kind: 'Role', scope: 'ns', namespace: 'dev',
+        rules: [
+          { resource: 'pods', verbs: ['get', 'list', 'watch'], write: false },
+          { resource: 'pods/log', verbs: ['get'], write: false },
+        ]
+      },
+    ]
+  },
+  monitoring: {
+    subjects: [
+      { id: 's1', icon: '🤖', name: 'prometheus-sa', sub: 'ServiceAccount · namespace: monitoring', kind: 'ServiceAccount' },
+      { id: 's2', icon: '👥', name: 'system:serviceaccounts:monitoring', sub: 'Group', kind: 'Group' },
+    ],
+    bindings: [
+      { id: 'b1', name: 'monitoring-clusterrolebinding', kind: 'ClusterRoleBinding', scope: 'cluster', subjectIds: ['s1', 's2'], roleId: 'r1' },
+    ],
+    roles: [
+      {
+        id: 'r1', name: 'metrics-reader', kind: 'ClusterRole', scope: 'cluster',
+        rules: [
+          { resource: 'nodes/metrics', verbs: ['get', 'list'], write: false },
+          { resource: 'pods', verbs: ['get', 'list', 'watch'], write: false },
+          { resource: 'services', verbs: ['get', 'list'], write: false },
+          { resource: '/metrics (non-resource URL)', verbs: ['get'], write: false },
+        ]
+      },
+    ]
+  },
+  cicd: {
+    subjects: [
+      { id: 's1', icon: '🤖', name: 'ci-runner-sa', sub: 'ServiceAccount · namespace: ci', kind: 'ServiceAccount' },
+      { id: 's2', icon: '👤', name: 'deploy-bot', sub: 'User', kind: 'User' },
+    ],
+    bindings: [
+      { id: 'b1', name: 'ci-deploy-binding', kind: 'RoleBinding', scope: 'ns', namespace: 'production', subjectIds: ['s1', 's2'], roleId: 'r1' },
+      { id: 'b2', name: 'ci-cluster-binding', kind: 'ClusterRoleBinding', scope: 'cluster', subjectIds: ['s1'], roleId: 'r2' },
+    ],
+    roles: [
+      {
+        id: 'r1', name: 'deployer', kind: 'Role', scope: 'ns', namespace: 'production',
+        rules: [
+          { resource: 'deployments', verbs: ['get', 'list', 'create', 'update', 'patch'], write: true },
+          { resource: 'services', verbs: ['get', 'list', 'create', 'update'], write: true },
+          { resource: 'configmaps', verbs: ['get', 'list', 'create', 'update'], write: true },
+        ]
+      },
+      {
+        id: 'r2', name: 'image-pull-clusterrole', kind: 'ClusterRole', scope: 'cluster',
+        rules: [
+          { resource: 'secrets (imagePullSecret)', verbs: ['get', 'list'], write: false },
+          { resource: 'nodes', verbs: ['get', 'list'], write: false },
+        ]
+      },
+    ]
+  }
+};
+
+let currentScenario = 'developer';
+let activeSubjectId = null;
+
+function getVerbClass(verb) {
+  const writeVerbs = ['create', 'update', 'patch', 'delete', 'deletecollection'];
+  const adminVerbs = ['*'];
+  if (adminVerbs.includes(verb)) return 'admin';
+  if (writeVerbs.includes(verb)) return 'write';
+  return '';
+}
+
+function renderVerbs(verbs) {
+  return verbs.map(v => `<span class="verb-tag ${getVerbClass(v)}">${v}</span>`).join('');
+}
+
+function getActiveBindings(subjectId) {
+  const data = SCENARIOS[currentScenario];
+  return data.bindings.filter(b => b.subjectIds.includes(subjectId));
+}
+
+function getActiveRoleIds(subjectId) {
+  return getActiveBindings(subjectId).map(b => b.roleId);
+}
+
+function render() {
+  const data = SCENARIOS[currentScenario];
+  const subjectsCol = document.getElementById('subjects-col');
+  const bindingsCol = document.getElementById('bindings-col');
+  const rolesCol = document.getElementById('roles-col');
+  const arrow1 = document.getElementById('arrow1');
+  const arrow2 = document.getElementById('arrow2');
+
+  const activeBindingIds = activeSubjectId ? getActiveBindings(activeSubjectId).map(b => b.id) : [];
+  const activeRoleIds = activeSubjectId ? getActiveRoleIds(activeSubjectId) : [];
+
+  // Arrow state
+  const hasActive = !!activeSubjectId;
+  arrow1.className = 'arrow' + (hasActive ? ' active' : '');
+  arrow2.className = 'arrow' + (hasActive ? ' active' : '');
+
+  // Subjects
+  subjectsCol.innerHTML = data.subjects.map(s => {
+    const isActive = s.id === activeSubjectId;
+    return `<div class="subject-card${isActive ? ' active' : ''}" data-id="${s.id}">
+      <div class="card-icon">${s.icon}</div>
+      <div class="card-name">${s.name}</div>
+      <div class="card-sub">${s.kind}${s.sub ? ' · ' + s.sub.replace(/^[^·]*· ?/, '') : ''}</div>
+    </div>`;
+  }).join('');
+
+  // Bindings
+  if (!activeSubjectId) {
+    bindingsCol.innerHTML = `<div class="empty-hint">← 点击左侧 Subject<br>查看权限链路</div>`;
+  } else {
+    const activeBindings = getActiveBindings(activeSubjectId);
+    if (activeBindings.length === 0) {
+      bindingsCol.innerHTML = `<div class="empty-hint">无 Binding</div>`;
+    } else {
+      bindingsCol.innerHTML = activeBindings.map(b => {
+        const scopeBadge = b.scope === 'cluster'
+          ? `<span class="badge badge-cluster">ClusterRoleBinding</span>`
+          : `<span class="badge badge-ns">RoleBinding · ${b.namespace}</span>`;
+        return `<div class="binding-card active">
+          <div class="card-name">${b.name}</div>
+          ${scopeBadge}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Roles
+  if (!activeSubjectId) {
+    rolesCol.innerHTML = `<div class="empty-hint">权限规则将<br>显示在此处</div>`;
+  } else {
+    const activeRoles = data.roles.filter(r => activeRoleIds.includes(r.id));
+    if (activeRoles.length === 0) {
+      rolesCol.innerHTML = `<div class="empty-hint">无 Role</div>`;
+    } else {
+      rolesCol.innerHTML = activeRoles.map(r => {
+        const scopeBadge = r.scope === 'cluster'
+          ? `<span class="badge badge-cluster">ClusterRole</span>`
+          : `<span class="badge badge-ns">Role · ${r.namespace}</span>`;
+        const rulesHtml = r.rules.map(rule => `
+          <div class="rule-item">
+            <span class="rule-resource">${rule.resource}</span>
+            <span>${renderVerbs(rule.verbs)}</span>
+          </div>`).join('');
+        return `<div class="role-card active">
+          <div class="card-name">${r.name}</div>
+          ${scopeBadge}
+          <div class="rules-list">${rulesHtml}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Re-attach subject click listeners
+  subjectsCol.querySelectorAll('.subject-card').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      activeSubjectId = (activeSubjectId === id) ? null : id;
+      render();
+    });
+  });
+}
+
+// Tab switching
+function initTabs() {
+  document.getElementById('tabs').querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentScenario = btn.dataset.scenario;
+      activeSubjectId = null;
+      render();
+    });
+  });
+}
+
+// ─── 2. Theme sync and initial render LAST ────────────────────────────────
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+
+initTabs();
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

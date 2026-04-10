@@ -64,6 +64,7 @@ function nav(): DefaultTheme.NavItem[] {
     {
       text: '技术书籍阅读',
       items: [
+        { text: 'Kubernetes in Action', link: '/zh/book-notes/kubernetes-in-action/' },
         { text: 'Designing Distributed Systems', link: '/zh/book-notes/designing-distributed-systems/' }
       ]
     }
@@ -141,6 +142,22 @@ function sidebar(): DefaultTheme.Sidebar {
         text: '技术书籍阅读',
         items: [
           { text: '概览', link: '/zh/book-notes/' },
+          {
+            text: 'Kubernetes in Action',
+            collapsed: false,
+            items: [
+              { text: '书籍总览', link: '/zh/book-notes/kubernetes-in-action/' },
+              { text: 'Ch1-2 容器化与 K8s 全局观', link: '/zh/book-notes/kubernetes-in-action/container-and-k8s-overview' },
+              { text: 'Ch3-4 核心工作负载：Pod 与副本控制', link: '/zh/book-notes/kubernetes-in-action/core-workloads-pod-controllers' },
+              { text: 'Ch5 网络与服务发现', link: '/zh/book-notes/kubernetes-in-action/networking-and-services' },
+              { text: 'Ch6 持久化存储', link: '/zh/book-notes/kubernetes-in-action/persistent-storage' },
+              { text: 'Ch7-9 配置、密钥与应用部署', link: '/zh/book-notes/kubernetes-in-action/config-secrets-deployments' },
+              { text: 'Ch10-11 有状态应用与内部架构', link: '/zh/book-notes/kubernetes-in-action/statefulsets-and-internals' },
+              { text: 'Ch12-13 安全体系', link: '/zh/book-notes/kubernetes-in-action/security' },
+              { text: 'Ch14-16 资源管理与高级调度', link: '/zh/book-notes/kubernetes-in-action/resources-and-scheduling' },
+              { text: 'Ch17-18 生产最佳实践与扩展', link: '/zh/book-notes/kubernetes-in-action/best-practices-and-extensions' }
+            ]
+          },
           {
             text: 'Designing Distributed Systems',
             collapsed: false,

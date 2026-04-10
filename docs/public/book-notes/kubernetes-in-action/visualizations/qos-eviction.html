@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QoS 驱逐优先级演示</title>
+<style>
+:root {
+  --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+  --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+  --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387
+}
+.light {
+  --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+  --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+  --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  padding: 20px;
+  min-height: 100vh;
+}
+h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; color: var(--fg); }
+.subtitle { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+/* Node container */
+.node-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.node-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.node-title { font-weight: 600; font-size: 13px; }
+.memory-bar-wrap {
+  background: var(--overlay);
+  border-radius: 6px;
+  height: 10px;
+  overflow: hidden;
+  flex: 1;
+  margin: 0 12px;
+}
+.memory-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.4s ease, background-color 0.4s ease;
+}
+.memory-pct { font-size: 12px; font-weight: 600; min-width: 36px; text-align: right; }
+
+/* Pod grid */
+.pod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+}
+.pod-card {
+  border-radius: 8px;
+  padding: 8px;
+  border: 2px solid transparent;
+  transition: all 0.4s ease;
+  position: relative;
+  text-align: center;
+}
+.pod-card.best-effort  { background: color-mix(in srgb, var(--peach) 15%, var(--surface)); border-color: var(--peach); }
+.pod-card.burstable    { background: color-mix(in srgb, var(--yellow) 15%, var(--surface)); border-color: var(--yellow); }
+.pod-card.guaranteed   { background: color-mix(in srgb, var(--green) 15%, var(--surface)); border-color: var(--green); }
+
+.pod-card.evicted {
+  opacity: 0.28;
+  filter: grayscale(0.7);
+  border-style: dashed;
+  transform: scale(0.94);
+}
+.pod-card.being-evicted {
+  animation: pulse-evict 0.6s ease-in-out;
+  border-color: var(--red) !important;
+  background: color-mix(in srgb, var(--red) 20%, var(--surface)) !important;
+}
+@keyframes pulse-evict {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.88); }
+  100% { transform: scale(0.94); }
+}
+
+.pod-name { font-size: 10px; font-weight: 600; margin-bottom: 2px; }
+.pod-qos  { font-size: 9px; color: var(--muted); margin-bottom: 3px; }
+.pod-usage-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--overlay);
+  overflow: hidden;
+  margin-top: 2px;
+}
+.pod-usage-fill { height: 100%; border-radius: 2px; }
+.pod-evicted-label {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--red);
+  background: var(--surface);
+  padding: 1px 4px;
+  border-radius: 3px;
+  display: none;
+}
+.pod-card.evicted .pod-evicted-label { display: block; }
+
+/* Slider */
+.slider-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slider-label { font-size: 12px; color: var(--muted); min-width: 100px; }
+input[type=range] {
+  flex: 1;
+  appearance: none;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--overlay);
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--blue);
+  cursor: pointer;
+}
+.slider-val { font-size: 13px; font-weight: 700; min-width: 40px; text-align: right; }
+
+/* Status / log */
+.status-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.status-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+.log-line {
+  font-size: 11px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.log-line:last-child { border-bottom: none; }
+.log-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.dot-ok     { background: var(--green); }
+.dot-warn   { background: var(--yellow); }
+.dot-evict  { background: var(--red); }
+.dot-info   { background: var(--blue); }
+
+/* Legend */
+.legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.legend-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+}
+</style>
+</head>
+<body>
+
+<h2>QoS 驱逐优先级演示</h2>
+<p class="subtitle">拖动滑块增加节点内存压力，观察 Kubernetes 按 QoS 类别驱逐 Pod 的顺序</p>
+
+<div class="slider-section">
+  <div class="section-label">节点内存压力</div>
+  <div class="slider-row">
+    <span class="slider-label">内存使用率</span>
+    <input type="range" id="memSlider" min="0" max="100" value="30">
+    <span class="slider-val" id="memVal">30%</span>
+  </div>
+</div>
+
+<div class="node-box" id="nodeBox">
+  <div class="node-header">
+    <span class="node-title">Node (worker-1)</span>
+    <div class="memory-bar-wrap">
+      <div class="memory-bar-fill" id="memBar" style="width:30%"></div>
+    </div>
+    <span class="memory-pct" id="memPct">30%</span>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--peach)"></div>BestEffort（最低优先级）</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>Burstable（中间优先级）</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Guaranteed（最高优先级）</div>
+  </div>
+  <div class="pod-grid" id="podGrid"></div>
+</div>
+
+<div class="status-box">
+  <div class="status-title">系统日志</div>
+  <div id="logContainer"></div>
+</div>
+
+<script>
+// ── 1. Data and state ──────────────────────────────────────────────────────
+const pods = [
+  { id:'be-1', name:'batch-job-1',     qos:'BestEffort', usage:0.85, req:0,    limit:0   },
+  { id:'be-2', name:'log-processor',  qos:'BestEffort', usage:0.70, req:0,    limit:0   },
+  { id:'bu-1', name:'api-server',     qos:'Burstable',  usage:0.90, req:512,  limit:1024},
+  { id:'bu-2', name:'worker-node',    qos:'Burstable',  usage:0.70, req:256,  limit:512 },
+  { id:'bu-3', name:'cache-proxy',    qos:'Burstable',  usage:0.55, req:128,  limit:256 },
+  { id:'gu-1', name:'llm-inference',  qos:'Guaranteed', usage:0.99, req:8192, limit:8192},
+  { id:'gu-2', name:'db-primary',     qos:'Guaranteed', usage:0.80, req:4096, limit:4096},
+  { id:'gu-3', name:'auth-service',   qos:'Guaranteed', usage:0.60, req:1024, limit:1024},
+];
+
+const THRESHOLDS = {
+  BE_START:  55,   // start evicting BestEffort
+  BE_END:    75,   // all BestEffort evicted
+  BU_START:  78,
+  BU_END:    92,
+  GU_START:  95,
+};
+
+let lastMemPct = 30;
+let logs = [];
+
+// ── 2. Helpers ─────────────────────────────────────────────────────────────
+function getEvictedSet(pct) {
+  const evicted = new Set();
+  // BestEffort pods get evicted first between 55-75%
+  pods.filter(p => p.qos === 'BestEffort').forEach((p, i) => {
+    const threshold = THRESHOLDS.BE_START + i * ((THRESHOLDS.BE_END - THRESHOLDS.BE_START) / Math.max(1, pods.filter(x=>x.qos==='BestEffort').length - 1));
+    if (pct >= threshold) evicted.add(p.id);
+  });
+  // Burstable — sorted by usage% of request (highest first)
+  const bustable = pods.filter(p => p.qos === 'Burstable').sort((a,b) => b.usage - a.usage);
+  bustable.forEach((p, i) => {
+    const threshold = THRESHOLDS.BU_START + i * ((THRESHOLDS.BU_END - THRESHOLDS.BU_START) / Math.max(1, bustable.length - 1));
+    if (pct >= threshold) evicted.add(p.id);
+  });
+  // Guaranteed — only if > 95%
+  if (pct >= THRESHOLDS.GU_START) {
+    const guaranteed = pods.filter(p => p.qos === 'Guaranteed').sort((a,b) => b.usage - a.usage);
+    if (pct >= 97) evicted.add(guaranteed[0].id);
+  }
+  return evicted;
+}
+
+function qosColor(qos) {
+  if (qos === 'BestEffort') return 'var(--peach)';
+  if (qos === 'Burstable')  return 'var(--yellow)';
+  return 'var(--green)';
+}
+
+function barColor(pct) {
+  if (pct < 60) return 'var(--green)';
+  if (pct < 80) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+function addLog(dot, msg) {
+  logs.push({ dot, msg });
+  if (logs.length > 8) logs.shift();
+}
+
+// ── 3. Render ──────────────────────────────────────────────────────────────
+function render() {
+  const pct = parseInt(document.getElementById('memSlider').value, 10);
+  const evicted = getEvictedSet(pct);
+
+  // Update memory bar
+  document.getElementById('memVal').textContent = pct + '%';
+  document.getElementById('memPct').textContent = pct + '%';
+  const bar = document.getElementById('memBar');
+  bar.style.width = pct + '%';
+  bar.style.background = barColor(pct);
+
+  // Update pods
+  const grid = document.getElementById('podGrid');
+  grid.innerHTML = '';
+  pods.forEach(p => {
+    const div = document.createElement('div');
+    const cls = p.qos === 'BestEffort' ? 'best-effort' : p.qos === 'Burstable' ? 'burstable' : 'guaranteed';
+    div.className = 'pod-card ' + cls + (evicted.has(p.id) ? ' evicted' : '');
+    div.innerHTML = `
+      <div class="pod-name">${p.name}</div>
+      <div class="pod-qos">${p.qos}</div>
+      <div class="pod-usage-bar"><div class="pod-usage-fill" style="width:${(p.usage*100).toFixed(0)}%;background:${qosColor(p.qos)}"></div></div>
+      <div class="pod-evicted-label">EVICTED</div>
+    `;
+    grid.appendChild(div);
+  });
+
+  // Generate logs
+  const newLogs = [];
+  if (pct < 55) {
+    newLogs.push({ dot:'dot-ok',   msg:`内存使用率 ${pct}% — 节点运行正常，所有 Pod 健康` });
+  } else if (pct < THRESHOLDS.BE_END) {
+    newLogs.push({ dot:'dot-warn', msg:`内存压力触发！(${pct}%) — 开始驱逐 BestEffort Pod` });
+    const beEvicted = pods.filter(p => p.qos === 'BestEffort' && evicted.has(p.id));
+    beEvicted.forEach(p => newLogs.push({ dot:'dot-evict', msg:`驱逐: ${p.name} [BestEffort] — 无资源请求保障，最先牺牲` }));
+  } else if (pct < THRESHOLDS.BU_END) {
+    newLogs.push({ dot:'dot-warn', msg:`内存严重不足 (${pct}%) — BestEffort 全部驱逐，开始驱逐 Burstable Pod` });
+    const buEvicted = pods.filter(p => p.qos === 'Burstable' && evicted.has(p.id));
+    buEvicted.forEach(p => newLogs.push({ dot:'dot-evict', msg:`驱逐: ${p.name} [Burstable] — 按实际使用/请求比从高到低排序` }));
+  } else {
+    newLogs.push({ dot:'dot-evict', msg:`内存危机！(${pct}%) — 节点接近崩溃，Guaranteed Pod 也受影响` });
+    const guEvicted = pods.filter(p => p.qos === 'Guaranteed' && evicted.has(p.id));
+    guEvicted.forEach(p => newLogs.push({ dot:'dot-evict', msg:`驱逐: ${p.name} [Guaranteed] — 极端情况，系统进程需要内存` }));
+    if (guEvicted.length === 0) {
+      newLogs.push({ dot:'dot-info', msg:`Guaranteed Pod (llm-inference, db-primary, auth-service) 仍然保护中` });
+    }
+  }
+
+  const logDiv = document.getElementById('logContainer');
+  logDiv.innerHTML = '';
+  newLogs.slice(-6).forEach(l => {
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `<div class="log-dot ${l.dot}"></div><span>${l.msg}</span>`;
+    logDiv.appendChild(line);
+  });
+
+  lastMemPct = pct;
+}
+
+// ── 4. Theme sync and initial render LAST ──────────────────────────────────
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+
+document.getElementById('memSlider').addEventListener('input', render);
+
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

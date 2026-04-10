@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>K8s 工作负载控制器对比</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --fg: #cdd6f4;
+    --muted: #6c7086;
+    --surface: #181825;
+    --border: #45475a;
+    --overlay: #313244;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    --blue: #89b4fa;
+    --yellow: #f9e2af;
+    --mauve: #cba6f7;
+    --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5;
+    --fg: #4c4f69;
+    --muted: #8c8fa1;
+    --surface: #e6e9ef;
+    --border: #ccd0da;
+    --overlay: #dce0e8;
+    --green: #40a02b;
+    --red: #d20f39;
+    --blue: #1e66f5;
+    --yellow: #df8e1d;
+    --mauve: #8839ef;
+    --peach: #fe640b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 16px;
+    min-height: 100vh;
+  }
+
+  h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--blue);
+    margin-bottom: 14px;
+    letter-spacing: 0.02em;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card:hover {
+    border-color: var(--blue);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+
+  .card.active {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-color-alpha);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .card-icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .card-subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 99px;
+    letter-spacing: 0.03em;
+  }
+
+  .expand-hint {
+    font-size: 10px;
+    color: var(--muted);
+    text-align: right;
+    margin-top: 6px;
+  }
+
+  /* Detail Panel */
+  .detail-panel {
+    background: var(--overlay);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    display: none;
+  }
+
+  .detail-panel.visible {
+    display: block;
+  }
+
+  .detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .detail-title {
+    font-size: 15px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .close-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 3px 8px;
+    transition: color 0.1s, border-color 0.1s;
+  }
+
+  .close-btn:hover {
+    color: var(--fg);
+    border-color: var(--fg);
+  }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  @media (max-width: 500px) {
+    .detail-grid { grid-template-columns: 1fr; }
+  }
+
+  .detail-section h4 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .detail-section ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .detail-section ul li {
+    font-size: 12px;
+    color: var(--fg);
+    padding: 3px 0;
+    padding-left: 14px;
+    position: relative;
+  }
+
+  .detail-section ul li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: var(--muted);
+    font-size: 10px;
+    top: 4px;
+  }
+
+  /* YAML toggle */
+  .yaml-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .yaml-toggle-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    transition: background 0.1s, border-color 0.1s;
+  }
+
+  .yaml-toggle-btn.active {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: var(--surface);
+  }
+
+  .yaml-block {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--fg);
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .yaml-block.visible {
+    display: block;
+  }
+
+  .yaml-key { color: var(--blue); }
+  .yaml-val { color: var(--green); }
+  .yaml-comment { color: var(--muted); font-style: italic; }
+  .yaml-str { color: var(--yellow); }
+  .yaml-kind { color: var(--mauve); font-weight: 700; }
+
+  /* Replica diagram */
+  .replica-diagram {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .node-box {
+    background: var(--overlay);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    text-align: center;
+    font-size: 10px;
+    min-width: 52px;
+  }
+
+  .node-label {
+    color: var(--muted);
+    font-size: 9px;
+    margin-bottom: 4px;
+  }
+
+  .pod-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin: 1px;
+    vertical-align: middle;
+  }
+
+  .pod-green { background: var(--green); }
+  .pod-blue { background: var(--blue); }
+  .pod-peach { background: var(--peach); }
+  .pod-mauve { background: var(--mauve); }
+
+  .footer-note {
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<h2>K8s 工作负载控制器对比</h2>
+
+<div class="grid" id="cardGrid"></div>
+
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-header">
+    <div class="detail-title" id="detailTitle"></div>
+    <button class="close-btn" onclick="closeDetail()">关闭 ✕</button>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-section" id="detailScenarios">
+      <h4>适用场景</h4>
+      <ul id="detailScenariosList"></ul>
+    </div>
+    <div class="detail-section" id="detailAI">
+      <h4>AI 基础设施用例</h4>
+      <ul id="detailAIList"></ul>
+    </div>
+  </div>
+  <div class="detail-section" id="detailReplicaDiagram" style="margin-bottom:12px;"></div>
+  <div class="yaml-toggle">
+    <span style="font-size:11px;color:var(--muted);">YAML 示例</span>
+    <button class="yaml-toggle-btn" id="yamlBtn" onclick="toggleYaml()">显示</button>
+  </div>
+  <div class="yaml-block" id="yamlBlock"></div>
+</div>
+
+<div class="footer-note">点击卡片查看详情 · 点击「显示」查看 YAML 示例</div>
+
+<script>
+// ─── 1. All data definitions ───────────────────────────────────────────────
+
+const controllers = [
+  {
+    id: 'replicaset',
+    icon: '⚡',
+    title: 'ReplicaSet',
+    subtitle: '固定副本数控制器',
+    badge: '最常用',
+    badgeBg: 'var(--blue)',
+    accentColor: '#89b4fa',
+    accentAlpha: 'rgba(137,180,250,0.15)',
+    scenarios: [
+      '无状态服务的水平扩展',
+      '需要多副本保证高可用',
+      '通常由 Deployment 自动管理',
+      '崩溃自动重启，节点失效自动迁移',
+    ],
+    aiUseCases: [
+      'vLLM / TGI 推理服务多副本',
+      'API 网关、代理服务',
+      'Feature Store 查询服务',
+      '模型版本 A/B 测试切量',
+    ],
+    replicaDiagram: 'replicaset',
+    yaml: `<span class="yaml-key">apiVersion:</span> <span class="yaml-val">apps/v1</span>
+<span class="yaml-kind">kind:</span> <span class="yaml-val">ReplicaSet</span>
+<span class="yaml-key">metadata:</span>
+  <span class="yaml-key">name:</span> <span class="yaml-val">llm-inference</span>
+<span class="yaml-key">spec:</span>
+  <span class="yaml-key">replicas:</span> <span class="yaml-val">3</span>
+  <span class="yaml-key">selector:</span>
+    <span class="yaml-key">matchLabels:</span>
+      <span class="yaml-key">app:</span> <span class="yaml-val">llm-inference</span>
+  <span class="yaml-key">template:</span>
+    <span class="yaml-key">metadata:</span>
+      <span class="yaml-key">labels:</span>
+        <span class="yaml-key">app:</span> <span class="yaml-val">llm-inference</span>
+    <span class="yaml-key">spec:</span>
+      <span class="yaml-key">containers:</span>
+      <span class="yaml-val">- name:</span> <span class="yaml-val">inference</span>
+        <span class="yaml-key">image:</span> <span class="yaml-val">vllm/vllm-openai:latest</span>
+        <span class="yaml-key">resources:</span>
+          <span class="yaml-key">limits:</span>
+            <span class="yaml-key">nvidia.com/gpu:</span> <span class="yaml-str">"1"</span>`
+  },
+  {
+    id: 'deployment',
+    icon: '🚀',
+    title: 'Deployment',
+    subtitle: 'ReplicaSet + 滚动更新',
+    badge: '推荐',
+    badgeBg: 'var(--green)',
+    accentColor: '#a6e3a1',
+    accentAlpha: 'rgba(166,227,161,0.15)',
+    scenarios: [
+      '管理 ReplicaSet 的上层抽象',
+      '支持滚动更新（rolling update）',
+      '支持回滚到历史版本',
+      '生产中替代 ReplicaSet 直接使用',
+    ],
+    aiUseCases: [
+      '推理服务的蓝绿 / 金丝雀部署',
+      '模型版本升级（无停机更新）',
+      'API 服务的零停机发布',
+      '回滚到上一个稳定模型版本',
+    ],
+    replicaDiagram: 'deployment',
+    yaml: `<span class="yaml-key">apiVersion:</span> <span class="yaml-val">apps/v1</span>
+<span class="yaml-kind">kind:</span> <span class="yaml-val">Deployment</span>
+<span class="yaml-key">metadata:</span>
+  <span class="yaml-key">name:</span> <span class="yaml-val">llm-inference</span>
+<span class="yaml-key">spec:</span>
+  <span class="yaml-key">replicas:</span> <span class="yaml-val">3</span>
+  <span class="yaml-key">strategy:</span>
+    <span class="yaml-key">type:</span> <span class="yaml-val">RollingUpdate</span>
+    <span class="yaml-key">rollingUpdate:</span>
+      <span class="yaml-key">maxSurge:</span> <span class="yaml-val">1</span>        <span class="yaml-comment"># 超出期望数最多 1 个</span>
+      <span class="yaml-key">maxUnavailable:</span> <span class="yaml-val">0</span>  <span class="yaml-comment"># 不允许不可用</span>
+  <span class="yaml-key">selector:</span>
+    <span class="yaml-key">matchLabels:</span>
+      <span class="yaml-key">app:</span> <span class="yaml-val">llm-inference</span>
+  <span class="yaml-key">template:</span>
+    <span class="yaml-key">metadata:</span>
+      <span class="yaml-key">labels:</span>
+        <span class="yaml-key">app:</span> <span class="yaml-val">llm-inference</span>
+    <span class="yaml-key">spec:</span>
+      <span class="yaml-key">containers:</span>
+      <span class="yaml-val">- name:</span> <span class="yaml-val">inference</span>
+        <span class="yaml-key">image:</span> <span class="yaml-val">vllm/vllm-openai:v0.4.1</span> <span class="yaml-comment"># 版本固定</span>`
+  },
+  {
+    id: 'daemonset',
+    icon: '🛡️',
+    title: 'DaemonSet',
+    subtitle: '每节点一个 Pod',
+    badge: '系统级',
+    badgeBg: 'var(--mauve)',
+    accentColor: '#cba6f7',
+    accentAlpha: 'rgba(203,166,247,0.15)',
+    scenarios: [
+      '每个节点必须运行且只运行一个',
+      '绕过调度器，直接分配到节点',
+      '即使节点设为不可调度也会部署',
+      '支持 nodeSelector 只覆盖特定节点',
+    ],
+    aiUseCases: [
+      'DCGM Exporter（GPU 指标采集）',
+      'Node Exporter（节点系统指标）',
+      'Fluentd / Filebeat（日志收集）',
+      'kube-proxy（网络规则维护）',
+    ],
+    replicaDiagram: 'daemonset',
+    yaml: `<span class="yaml-key">apiVersion:</span> <span class="yaml-val">apps/v1</span>
+<span class="yaml-kind">kind:</span> <span class="yaml-val">DaemonSet</span>
+<span class="yaml-key">metadata:</span>
+  <span class="yaml-key">name:</span> <span class="yaml-val">dcgm-exporter</span>
+  <span class="yaml-key">namespace:</span> <span class="yaml-val">monitoring</span>
+<span class="yaml-key">spec:</span>
+  <span class="yaml-key">selector:</span>
+    <span class="yaml-key">matchLabels:</span>
+      <span class="yaml-key">app:</span> <span class="yaml-val">dcgm-exporter</span>
+  <span class="yaml-key">template:</span>
+    <span class="yaml-key">spec:</span>
+      <span class="yaml-key">nodeSelector:</span>
+        <span class="yaml-key">accelerator:</span> <span class="yaml-val">nvidia-gpu</span> <span class="yaml-comment"># 仅 GPU 节点</span>
+      <span class="yaml-key">containers:</span>
+      <span class="yaml-val">- name:</span> <span class="yaml-val">dcgm-exporter</span>
+        <span class="yaml-key">image:</span> <span class="yaml-val">nvcr.io/nvidia/k8s/dcgm-exporter:3.3.0</span>
+        <span class="yaml-key">ports:</span>
+        <span class="yaml-val">- containerPort:</span> <span class="yaml-val">9400</span>
+          <span class="yaml-key">name:</span> <span class="yaml-val">metrics</span>`
+  },
+  {
+    id: 'job',
+    icon: '⚙️',
+    title: 'Job',
+    subtitle: '一次性批处理任务',
+    badge: '有终点',
+    badgeBg: 'var(--peach)',
+    accentColor: '#fab387',
+    accentAlpha: 'rgba(250,179,135,0.15)',
+    scenarios: [
+      '完成即停止，不重启（区别于 RS）',
+      '支持 completions 和 parallelism',
+      '节点故障时重新调度到其他节点',
+      'activeDeadlineSeconds 设置超时',
+    ],
+    aiUseCases: [
+      '模型微调训练（单次运行）',
+      '大规模批量推理（数据集处理）',
+      '数据预处理 / 特征工程 Pipeline',
+      '模型量化、导出 ONNX',
+    ],
+    replicaDiagram: 'job',
+    yaml: `<span class="yaml-key">apiVersion:</span> <span class="yaml-val">batch/v1</span>
+<span class="yaml-kind">kind:</span> <span class="yaml-val">Job</span>
+<span class="yaml-key">metadata:</span>
+  <span class="yaml-key">name:</span> <span class="yaml-val">model-finetuning</span>
+<span class="yaml-key">spec:</span>
+  <span class="yaml-key">completions:</span> <span class="yaml-val">1</span>
+  <span class="yaml-key">parallelism:</span> <span class="yaml-val">1</span>
+  <span class="yaml-key">activeDeadlineSeconds:</span> <span class="yaml-val">86400</span> <span class="yaml-comment"># 24h 超时</span>
+  <span class="yaml-key">backoffLimit:</span> <span class="yaml-val">3</span>
+  <span class="yaml-key">template:</span>
+    <span class="yaml-key">spec:</span>
+      <span class="yaml-key">restartPolicy:</span> <span class="yaml-val">OnFailure</span> <span class="yaml-comment"># 必须设置！</span>
+      <span class="yaml-key">containers:</span>
+      <span class="yaml-val">- name:</span> <span class="yaml-val">trainer</span>
+        <span class="yaml-key">image:</span> <span class="yaml-val">pytorch/pytorch:2.1.0-cuda12.1</span>
+        <span class="yaml-key">command:</span> <span class="yaml-str">["python", "train.py"]</span>
+        <span class="yaml-key">resources:</span>
+          <span class="yaml-key">limits:</span>
+            <span class="yaml-key">nvidia.com/gpu:</span> <span class="yaml-str">"8"</span>`
+  },
+  {
+    id: 'cronjob',
+    icon: '⏰',
+    title: 'CronJob',
+    subtitle: '定时触发 Job',
+    badge: '定时',
+    badgeBg: 'var(--yellow)',
+    accentColor: '#f9e2af',
+    accentAlpha: 'rgba(249,226,175,0.15)',
+    scenarios: [
+      '按 cron 格式定期创建 Job',
+      'startingDeadlineSeconds 控制容错',
+      '需保证任务幂等性',
+      '可能出现 Job 遗漏或重叠',
+    ],
+    aiUseCases: [
+      '每日凌晨运行模型评估基准',
+      '定期增量微调（拉取新数据）',
+      '每小时统计推理吞吐量报告',
+      '定期清理过期模型版本 / 缓存',
+    ],
+    replicaDiagram: 'cronjob',
+    yaml: `<span class="yaml-key">apiVersion:</span> <span class="yaml-val">batch/v1</span>
+<span class="yaml-kind">kind:</span> <span class="yaml-val">CronJob</span>
+<span class="yaml-key">metadata:</span>
+  <span class="yaml-key">name:</span> <span class="yaml-val">daily-model-eval</span>
+<span class="yaml-key">spec:</span>
+  <span class="yaml-key">schedule:</span> <span class="yaml-str">"0 2 * * *"</span>       <span class="yaml-comment"># 每天凌晨 2 点</span>
+  <span class="yaml-key">startingDeadlineSeconds:</span> <span class="yaml-val">300</span>
+  <span class="yaml-key">jobTemplate:</span>
+    <span class="yaml-key">spec:</span>
+      <span class="yaml-key">template:</span>
+        <span class="yaml-key">spec:</span>
+          <span class="yaml-key">restartPolicy:</span> <span class="yaml-val">OnFailure</span>
+          <span class="yaml-key">containers:</span>
+          <span class="yaml-val">- name:</span> <span class="yaml-val">evaluator</span>
+            <span class="yaml-key">image:</span> <span class="yaml-val">my-eval:latest</span>
+            <span class="yaml-key">command:</span> <span class="yaml-str">["python", "run_evals.py"]</span>`
+  },
+  {
+    id: 'statefulset',
+    icon: '🗄️',
+    title: 'StatefulSet',
+    subtitle: '有状态、有序副本',
+    badge: '有状态',
+    badgeBg: 'var(--red)',
+    accentColor: '#f38ba8',
+    accentAlpha: 'rgba(243,139,168,0.15)',
+    scenarios: [
+      '每个 Pod 有稳定、唯一的网络标识',
+      '有序部署、有序扩缩、有序滚动更新',
+      '持久化存储与 Pod 标识绑定',
+      '适用于需要 leader 选举的分布式系统',
+    ],
+    aiUseCases: [
+      '向量数据库（Milvus、Weaviate、Qdrant）',
+      '分布式训练参数服务器（PS-Worker）',
+      'Kafka（消息队列，特征流水线）',
+      'Ray 集群的 Head / Worker 节点',
+    ],
+    replicaDiagram: 'statefulset',
+    yaml: `<span class="yaml-key">apiVersion:</span> <span class="yaml-val">apps/v1</span>
+<span class="yaml-kind">kind:</span> <span class="yaml-val">StatefulSet</span>
+<span class="yaml-key">metadata:</span>
+  <span class="yaml-key">name:</span> <span class="yaml-val">milvus</span>
+<span class="yaml-key">spec:</span>
+  <span class="yaml-key">serviceName:</span> <span class="yaml-str">"milvus"</span>    <span class="yaml-comment"># 需要 Headless Service</span>
+  <span class="yaml-key">replicas:</span> <span class="yaml-val">3</span>
+  <span class="yaml-key">selector:</span>
+    <span class="yaml-key">matchLabels:</span>
+      <span class="yaml-key">app:</span> <span class="yaml-val">milvus</span>
+  <span class="yaml-key">volumeClaimTemplates:</span>   <span class="yaml-comment"># 每个 Pod 独立 PVC</span>
+  <span class="yaml-val">- metadata:</span>
+      <span class="yaml-key">name:</span> <span class="yaml-val">data</span>
+    <span class="yaml-key">spec:</span>
+      <span class="yaml-key">accessModes:</span> <span class="yaml-str">["ReadWriteOnce"]</span>
+      <span class="yaml-key">resources:</span>
+        <span class="yaml-key">requests:</span>
+          <span class="yaml-key">storage:</span> <span class="yaml-val">100Gi</span>`
+  }
+];
+
+// ─── 2. Diagram builder ──────────────────────────────────────────────────────
+
+function buildDiagram(type) {
+  const nodes = [
+    { label: 'Node 1', pods: [] },
+    { label: 'Node 2', pods: [] },
+    { label: 'Node 3', pods: [] },
+    { label: 'Node 4', pods: [] },
+  ];
+
+  if (type === 'replicaset' || type === 'deployment') {
+    nodes[0].pods = ['pod-green'];
+    nodes[1].pods = ['pod-green', 'pod-green'];
+    nodes[2].pods = [];
+    nodes[3].pods = ['pod-green'];
+  } else if (type === 'daemonset') {
+    nodes.forEach(n => { n.pods = ['pod-blue']; });
+  } else if (type === 'job') {
+    nodes[0].pods = ['pod-peach'];
+    nodes[1].pods = ['pod-peach', 'pod-peach'];
+    nodes[2].pods = [];
+    nodes[3].pods = [];
+  } else if (type === 'cronjob') {
+    nodes[0].pods = ['pod-mauve'];
+    nodes[1].pods = ['pod-mauve'];
+    nodes[2].pods = [];
+    nodes[3].pods = [];
+  } else if (type === 'statefulset') {
+    nodes[0].pods = ['pod-peach'];
+    nodes[1].pods = ['pod-peach'];
+    nodes[2].pods = ['pod-peach'];
+    nodes[3].pods = [];
+  }
+
+  const labels = {
+    replicaset: 'ReplicaSet: 4 副本，随机分布',
+    deployment: 'Deployment → ReplicaSet: 4 副本，支持滚动更新',
+    daemonset: 'DaemonSet: 每节点 1 个，共 4 个',
+    job: 'Job: 3 次完成任务（completions=3, parallelism=2）',
+    cronjob: 'CronJob → 定时创建 Job（schedule: "0 2 * * *"）',
+    statefulset: 'StatefulSet: 3 有序副本（milvus-0, milvus-1, milvus-2）',
+  };
+
+  let html = `<h4 style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;">副本分布示意</h4>`;
+  html += `<div class="replica-diagram">`;
+  for (const node of nodes) {
+    html += `<div class="node-box">`;
+    html += `<div class="node-label">${node.label}</div>`;
+    if (node.pods.length === 0) {
+      html += `<span style="color:var(--muted);font-size:10px;">–</span>`;
+    } else {
+      for (const pod of node.pods) {
+        html += `<span class="pod-dot ${pod}"></span>`;
+      }
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  html += `<p style="font-size:10px;color:var(--muted);margin-top:6px;">${labels[type] || ''}</p>`;
+  return html;
+}
+
+// ─── 3. Render functions ─────────────────────────────────────────────────────
+
+let activeId = null;
+let yamlVisible = false;
+
+function renderCards() {
+  const grid = document.getElementById('cardGrid');
+  grid.innerHTML = '';
+  for (const c of controllers) {
+    const isActive = c.id === activeId;
+    const card = document.createElement('div');
+    card.className = 'card' + (isActive ? ' active' : '');
+    card.style.setProperty('--accent-color', c.accentColor);
+    card.style.setProperty('--accent-color-alpha', c.accentAlpha);
+    if (isActive) {
+      card.style.borderColor = c.accentColor;
+      card.style.boxShadow = `0 0 0 2px ${c.accentAlpha}`;
+    }
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-icon">${c.icon}</span>
+        <span class="card-title" style="color:${c.accentColor}">${c.title}</span>
+      </div>
+      <div class="card-subtitle">${c.subtitle}</div>
+      <span class="badge" style="background:${c.badgeBg};color:var(--surface)">${c.badge}</span>
+      <div class="expand-hint">${isActive ? '点击收起' : '点击展开 →'}</div>
+    `;
+    card.onclick = () => toggleDetail(c.id);
+    grid.appendChild(card);
+  }
+}
+
+function toggleDetail(id) {
+  if (activeId === id) {
+    activeId = null;
+    closeDetail();
+  } else {
+    activeId = id;
+    yamlVisible = false;
+    showDetail(id);
+  }
+  renderCards();
+}
+
+function showDetail(id) {
+  const c = controllers.find(x => x.id === id);
+  if (!c) return;
+
+  document.getElementById('detailTitle').innerHTML = `<span>${c.icon}</span><span style="color:${c.accentColor}">${c.title}</span>`;
+
+  const scenariosList = document.getElementById('detailScenariosList');
+  scenariosList.innerHTML = c.scenarios.map(s => `<li>${s}</li>`).join('');
+
+  const aiList = document.getElementById('detailAIList');
+  aiList.innerHTML = c.aiUseCases.map(s => `<li>${s}</li>`).join('');
+
+  document.getElementById('detailReplicaDiagram').innerHTML = buildDiagram(c.replicaDiagram);
+
+  const yamlBlock = document.getElementById('yamlBlock');
+  yamlBlock.innerHTML = c.yaml;
+  yamlBlock.classList.remove('visible');
+
+  const yamlBtn = document.getElementById('yamlBtn');
+  yamlBtn.classList.remove('active');
+  yamlBtn.textContent = '显示';
+
+  document.getElementById('detailPanel').classList.add('visible');
+
+  // Scroll into view smoothly
+  try {
+    document.getElementById('detailPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch(e) {}
+}
+
+function closeDetail() {
+  activeId = null;
+  document.getElementById('detailPanel').classList.remove('visible');
+  yamlVisible = false;
+  renderCards();
+}
+
+function toggleYaml() {
+  yamlVisible = !yamlVisible;
+  const yamlBlock = document.getElementById('yamlBlock');
+  const yamlBtn = document.getElementById('yamlBtn');
+  if (yamlVisible) {
+    yamlBlock.classList.add('visible');
+    yamlBtn.classList.add('active');
+    yamlBtn.textContent = '隐藏';
+  } else {
+    yamlBlock.classList.remove('visible');
+    yamlBtn.classList.remove('active');
+    yamlBtn.textContent = '显示';
+  }
+}
+
+// ─── 4. Theme sync and initial render LAST ──────────────────────────────────
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  renderCards();
+}
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

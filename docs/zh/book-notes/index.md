@@ -15,3 +15,4 @@ tags: [book-notes, technical-reading]
 | 书名 | 作者 | 主题 | 状态 |
 |------|------|------|------|
 | [Designing Distributed Systems (2nd Ed.)](./designing-distributed-systems/) | Brendan Burns | 分布式系统设计模式 | ✅ 已完成 |
+| [Kubernetes in Action](./kubernetes-in-action/) | Marko Lukša | K8s 核心概念与生产实践 | 📖 进行中 |

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes Scheduler 调度流水线</title>
+<style>
+:root {
+  --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+  --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+  --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387
+}
+.light {
+  --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+  --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+  --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  padding: 18px;
+  min-height: 100vh;
+}
+h2 { font-size: 16px; font-weight: 600; margin-bottom: 3px; }
+.subtitle { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+
+/* Pod config */
+.config-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.config-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.config-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 6px; }
+select {
+  width: 100%;
+  background: var(--overlay);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--fg);
+  font-size: 11px;
+  padding: 4px 6px;
+  cursor: pointer;
+  outline: none;
+}
+select:focus { border-color: var(--blue); }
+
+/* Run button */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--blue);
+  color: var(--bg);
+  border: none;
+  border-radius: 6px;
+  padding: 7px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 14px;
+  transition: opacity 0.2s;
+}
+.btn:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Pipeline stages */
+.pipeline {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 14px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.stage {
+  flex: 1;
+  min-width: 60px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 8px 6px;
+  text-align: center;
+  position: relative;
+  transition: background 0.3s;
+}
+.stage:first-child { border-radius: 8px 0 0 8px; }
+.stage:last-child  { border-radius: 0 8px 8px 0; }
+.stage + .stage { border-left: none; }
+.stage.active { background: color-mix(in srgb, var(--blue) 18%, var(--surface)); border-color: var(--blue); }
+.stage.done-ok { background: color-mix(in srgb, var(--green) 12%, var(--surface)); border-color: var(--green); }
+.stage.done-bind { background: color-mix(in srgb, var(--mauve) 18%, var(--surface)); border-color: var(--mauve); }
+.stage-icon { font-size: 18px; margin-bottom: 2px; }
+.stage-name { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.stage-count { font-size: 16px; font-weight: 700; color: var(--fg); margin: 2px 0; }
+.stage-label { font-size: 9px; color: var(--muted); }
+
+/* Node cards */
+.nodes-section-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--muted); margin-bottom: 8px;
+}
+.nodes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.node-card {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: all 0.35s ease;
+  position: relative;
+  overflow: hidden;
+}
+.node-card.passing  { border-color: var(--green); }
+.node-card.filtered { border-color: var(--red); opacity: 0.4; }
+.node-card.winner   {
+  border-color: var(--mauve);
+  background: color-mix(in srgb, var(--mauve) 14%, var(--surface));
+  transform: scale(1.03);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--mauve) 30%, transparent);
+}
+.node-name { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+.node-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 5px; }
+.tag {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 20px;
+  background: var(--overlay);
+  color: var(--muted);
+}
+.tag.gpu { background: color-mix(in srgb, var(--mauve) 20%, var(--overlay)); color: var(--mauve); }
+.tag.taint { background: color-mix(in srgb, var(--red) 20%, var(--overlay)); color: var(--red); }
+.node-resources { font-size: 9px; color: var(--muted); }
+.node-score-badge {
+  position: absolute;
+  top: 5px; right: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--blue);
+}
+.node-card.winner .node-score-badge { color: var(--mauve); }
+.node-card.filtered .node-score-badge { display: none; }
+.filter-reason {
+  font-size: 9px;
+  color: var(--red);
+  margin-top: 3px;
+  font-style: italic;
+}
+
+/* Result */
+.result-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.result-title { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.07em; margin-bottom: 6px; }
+.result-msg { font-size: 12px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<h2>Scheduler 调度流水线</h2>
+<p class="subtitle">配置 Pod 需求，观察 Filter（过滤）→ Score（打分）→ Bind（绑定）三阶段调度决策</p>
+
+<div class="config-row">
+  <div class="config-box">
+    <div class="config-title">CPU/内存 Requests</div>
+    <select id="selResources">
+      <option value="small">小型 (100m CPU, 128Mi)</option>
+      <option value="medium" selected>中型 (2 CPU, 4Gi)</option>
+      <option value="large">大型 (8 CPU, 32Gi)</option>
+      <option value="gpu">GPU (4 CPU, 32Gi + 1 GPU)</option>
+    </select>
+  </div>
+  <div class="config-box">
+    <div class="config-title">Node Affinity</div>
+    <select id="selAffinity">
+      <option value="none" selected>无要求</option>
+      <option value="gpu">要求 GPU 节点</option>
+      <option value="zone1">preferred: zone=zone1</option>
+    </select>
+  </div>
+  <div class="config-box">
+    <div class="config-title">Toleration</div>
+    <select id="selToleration">
+      <option value="none" selected>无 Toleration</option>
+      <option value="gpu">tolerate: nvidia.com/gpu</option>
+      <option value="prod">tolerate: node-type=production</option>
+    </select>
+  </div>
+</div>
+
+<button class="btn" id="runBtn" onclick="runScheduling()">运行调度</button>
+
+<div class="pipeline" id="pipeline">
+  <div class="stage" id="stg-queue">
+    <div class="stage-icon">📋</div>
+    <div class="stage-name">Queue</div>
+    <div class="stage-count" id="cnt-queue">1</div>
+    <div class="stage-label">Pending Pod</div>
+  </div>
+  <div class="stage" id="stg-filter">
+    <div class="stage-icon">🔍</div>
+    <div class="stage-name">Filter</div>
+    <div class="stage-count" id="cnt-filter">—</div>
+    <div class="stage-label">节点通过</div>
+  </div>
+  <div class="stage" id="stg-score">
+    <div class="stage-icon">📊</div>
+    <div class="stage-name">Score</div>
+    <div class="stage-count" id="cnt-score">—</div>
+    <div class="stage-label">候选节点</div>
+  </div>
+  <div class="stage" id="stg-bind">
+    <div class="stage-icon">🔗</div>
+    <div class="stage-name">Bind</div>
+    <div class="stage-count" id="cnt-bind">—</div>
+    <div class="stage-label">选定节点</div>
+  </div>
+</div>
+
+<div class="nodes-section-title" id="nodesTitle">集群节点（共 6 个）</div>
+<div class="nodes-grid" id="nodesGrid"></div>
+
+<div class="result-box">
+  <div class="result-title">调度结果</div>
+  <div class="result-msg" id="resultMsg">点击"运行调度"查看 Scheduler 的决策过程</div>
+</div>
+
+<script>
+// ── 1. Data ────────────────────────────────────────────────────────────────
+const NODES = [
+  { id:'node-1', name:'worker-cpu-1', zone:'zone1', cpu:16, mem:64, gpus:0, taints:[], tags:['zone1','high-cpu'] },
+  { id:'node-2', name:'worker-cpu-2', zone:'zone1', cpu:8,  mem:32, gpus:0, taints:[], tags:['zone1'] },
+  { id:'node-3', name:'worker-cpu-3', zone:'zone2', cpu:8,  mem:16, gpus:0, taints:[], tags:['zone2'] },
+  { id:'node-4', name:'gpu-node-a100',zone:'zone1', cpu:32, mem:256,gpus:8, taints:['nvidia.com/gpu:NoSchedule'], tags:['zone1','gpu','A100'] },
+  { id:'node-5', name:'gpu-node-h100',zone:'zone2', cpu:64, mem:512,gpus:8, taints:['nvidia.com/gpu:NoSchedule'], tags:['zone2','gpu','H100'] },
+  { id:'node-6', name:'prod-reserved', zone:'zone2', cpu:16, mem:64, gpus:0, taints:['node-type=production:NoSchedule'], tags:['zone2','prod'] },
+];
+
+const RESOURCE_PRESETS = {
+  small:  { cpu:0.1, mem:0.128, gpu:0 },
+  medium: { cpu:2,   mem:4,     gpu:0 },
+  large:  { cpu:8,   mem:32,    gpu:0 },
+  gpu:    { cpu:4,   mem:32,    gpu:1 },
+};
+
+// ── 2. Scoring ─────────────────────────────────────────────────────────────
+function scoreNode(node, affinityVal) {
+  let score = 0;
+  // LeastRequested: more free resources = higher score
+  const freeCpu = node.cpu;
+  const freeMem = node.mem;
+  score += Math.min(40, Math.round(freeCpu / 64 * 40));
+  score += Math.min(30, Math.round(freeMem / 512 * 30));
+  // Affinity bonus
+  if (affinityVal === 'zone1' && node.zone === 'zone1') score += 20;
+  if (affinityVal === 'gpu'   && node.gpus > 0)         score += 25;
+  return Math.min(100, score);
+}
+
+// ── 3. Main scheduling logic ───────────────────────────────────────────────
+let animStep = 0;
+let animTimer = null;
+let nodeStates = {};
+
+function runScheduling() {
+  if (animTimer) clearTimeout(animTimer);
+  document.getElementById('runBtn').disabled = true;
+
+  const res   = RESOURCE_PRESETS[document.getElementById('selResources').value];
+  const aff   = document.getElementById('selAffinity').value;
+  const tolVal= document.getElementById('selToleration').value;
+
+  // Reset pipeline
+  ['stg-queue','stg-filter','stg-score','stg-bind'].forEach(id => {
+    const s = document.getElementById(id);
+    s.className = 'stage';
+  });
+  ['cnt-filter','cnt-score','cnt-bind'].forEach(id => {
+    document.getElementById(id).textContent = '—';
+  });
+  document.getElementById('resultMsg').textContent = '调度中…';
+
+  // Determine tolerated taints
+  const toleratedTaints = new Set();
+  if (tolVal === 'gpu')  toleratedTaints.add('nvidia.com/gpu:NoSchedule');
+  if (tolVal === 'prod') toleratedTaints.add('node-type=production:NoSchedule');
+
+  // Filter phase
+  const filterResults = NODES.map(node => {
+    const reasons = [];
+    // Taint check
+    node.taints.forEach(t => {
+      if (!toleratedTaints.has(t)) reasons.push(`Taint: ${t} (无 Toleration)`);
+    });
+    // Resource check
+    if (res.cpu > node.cpu)  reasons.push(`CPU 不足 (需 ${res.cpu}, 可分配 ${node.cpu})`);
+    if (res.mem > node.mem)  reasons.push(`内存不足 (需 ${res.mem}Gi, 可分配 ${node.mem}Gi)`);
+    if (res.gpu > node.gpus) reasons.push(`GPU 不足 (需 ${res.gpu}, 有 ${node.gpus})`);
+    // Hard affinity
+    if (aff === 'gpu' && node.gpus === 0) reasons.push('NodeAffinity: 要求 GPU 节点');
+    return { node, pass: reasons.length === 0, reasons };
+  });
+
+  const passing = filterResults.filter(r => r.pass);
+
+  // Score phase
+  const scored = passing.map(r => ({
+    ...r,
+    score: scoreNode(r.node, aff)
+  })).sort((a,b) => b.score - a.score);
+
+  const winner = scored[0] || null;
+
+  // Build node states
+  nodeStates = {};
+  filterResults.forEach(r => {
+    nodeStates[r.node.id] = {
+      pass: r.pass,
+      reasons: r.reasons,
+      score: r.pass ? scoreNode(r.node, aff) : null,
+      winner: winner && r.node.id === winner.node.id,
+    };
+  });
+
+  // Animate step by step
+  const steps = [
+    () => {
+      document.getElementById('stg-queue').className = 'stage active';
+      document.getElementById('resultMsg').textContent = '📋 Pod 进入调度队列，等待 Scheduler 处理…';
+      renderNodes('initial');
+    },
+    () => {
+      document.getElementById('stg-queue').className = 'stage done-ok';
+      document.getElementById('stg-filter').className = 'stage active';
+      document.getElementById('cnt-filter').textContent = passing.length + '/' + NODES.length;
+      document.getElementById('resultMsg').textContent = `🔍 Filter 阶段：检查资源、Taint、Affinity → ${passing.length} 个节点通过，${NODES.length - passing.length} 个被过滤`;
+      renderNodes('filter');
+    },
+    () => {
+      document.getElementById('stg-filter').className = 'stage done-ok';
+      document.getElementById('stg-score').className = 'stage active';
+      document.getElementById('cnt-score').textContent = passing.length;
+      document.getElementById('resultMsg').textContent = `📊 Score 阶段：对 ${passing.length} 个候选节点打分（LeastRequested + Affinity 权重）`;
+      renderNodes('score');
+    },
+    () => {
+      document.getElementById('stg-score').className = 'stage done-ok';
+      document.getElementById('stg-bind').className = 'stage done-bind';
+      document.getElementById('cnt-bind').textContent = winner ? '1' : '0';
+      if (winner) {
+        document.getElementById('resultMsg').textContent = `✅ 绑定成功：Pod → ${winner.node.name}（得分 ${winner.score}/100）\n节点规格：${winner.node.cpu} CPU, ${winner.node.mem}Gi 内存${winner.node.gpus > 0 ? ', ' + winner.node.gpus + ' GPU' : ''}`;
+      } else {
+        document.getElementById('resultMsg').textContent = '❌ 调度失败：没有节点满足 Pod 的所有要求，Pod 保持 Pending 状态';
+        document.getElementById('stg-bind').className = 'stage';
+      }
+      renderNodes('bind');
+      document.getElementById('runBtn').disabled = false;
+    },
+  ];
+
+  animStep = 0;
+  function runStep() {
+    if (animStep < steps.length) {
+      steps[animStep]();
+      animStep++;
+      animTimer = setTimeout(runStep, 900);
+    }
+  }
+  runStep();
+}
+
+function renderNodes(phase) {
+  const grid = document.getElementById('nodesGrid');
+  grid.innerHTML = '';
+
+  NODES.forEach(node => {
+    const state = nodeStates[node.id] || { pass: true, reasons: [], score: null, winner: false };
+    const card = document.createElement('div');
+
+    let cls = 'node-card';
+    if (phase === 'filter' || phase === 'score' || phase === 'bind') {
+      if (!state.pass) cls += ' filtered';
+      else if (state.winner && phase === 'bind') cls += ' winner';
+      else if (state.pass) cls += ' passing';
+    }
+
+    const tagsHtml = node.tags.map(t =>
+      `<span class="tag ${t==='gpu'||t==='A100'||t==='H100' ? 'gpu' : t==='prod' ? 'taint' : ''}">${t}</span>`
+    ).join('');
+
+    const taintsHtml = node.taints.map(t =>
+      `<span class="tag taint">⚠ ${t.split(':')[0].split('=')[0]}</span>`
+    ).join('');
+
+    let scoreHtml = '';
+    if ((phase === 'score' || phase === 'bind') && state.score !== null) {
+      scoreHtml = `<span class="node-score-badge">${state.score}</span>`;
+    }
+
+    let reasonHtml = '';
+    if ((phase === 'filter' || phase === 'score' || phase === 'bind') && !state.pass) {
+      reasonHtml = `<div class="filter-reason">${state.reasons[0]}</div>`;
+    }
+
+    card.className = cls;
+    card.innerHTML = `
+      ${scoreHtml}
+      <div class="node-name">${node.name}</div>
+      <div class="node-tags">${tagsHtml}${taintsHtml}</div>
+      <div class="node-resources">${node.cpu} CPU · ${node.mem}Gi · ${node.gpus} GPU</div>
+      ${reasonHtml}
+    `;
+    grid.appendChild(card);
+  });
+}
+
+// ── 4. Theme sync and initial render LAST ──────────────────────────────────
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  renderNodes('initial');
+}
+
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

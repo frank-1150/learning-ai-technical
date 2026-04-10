@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes Service 流量路由演示</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --fg: #cdd6f4;
+    --muted: #6c7086;
+    --surface: #181825;
+    --border: #45475a;
+    --overlay: #313244;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    --blue: #89b4fa;
+    --yellow: #f9e2af;
+    --mauve: #cba6f7;
+    --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5;
+    --fg: #4c4f69;
+    --muted: #8c8fa1;
+    --surface: #e6e9ef;
+    --border: #ccd0da;
+    --overlay: #dce0e8;
+    --green: #40a02b;
+    --red: #d20f39;
+    --blue: #1e66f5;
+    --yellow: #df8e1d;
+    --mauve: #8839ef;
+    --peach: #fe640b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .header {
+    padding: 10px 16px 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+  }
+
+  .tab {
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    transition: all 0.2s;
+  }
+
+  .tab:hover {
+    background: var(--overlay);
+    color: var(--fg);
+  }
+
+  .tab.active {
+    background: var(--blue);
+    color: var(--bg);
+    border-color: var(--blue);
+  }
+
+  .tab.active[data-mode="NodePort"] { background: var(--green); border-color: var(--green); }
+  .tab.active[data-mode="LoadBalancer"] { background: var(--mauve); border-color: var(--mauve); }
+
+  .canvas-wrapper {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .description {
+    padding: 6px 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+  }
+
+  .description span {
+    color: var(--fg);
+    font-weight: 500;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="title">Service 流量路由演示</div>
+  <div class="tabs">
+    <button class="tab active" data-mode="ClusterIP">ClusterIP</button>
+    <button class="tab" data-mode="NodePort">NodePort</button>
+    <button class="tab" data-mode="LoadBalancer">LoadBalancer</button>
+  </div>
+</div>
+
+<div class="canvas-wrapper">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div class="description" id="desc">
+  <span>ClusterIP</span>：集群内部虚拟 IP，kube-proxy 通过 iptables/IPVS 将流量转发到后端 Pod
+</div>
+
+<script>
+// ─── 1. 所有 const/let 声明和函数定义 ───────────────────────────────────────────
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const desc = document.getElementById('desc');
+
+const DESCRIPTIONS = {
+  ClusterIP: '<span>ClusterIP</span>：集群内部虚拟 IP，kube-proxy 通过 iptables/IPVS 将流量转发到后端 Pod，外部无法直接访问',
+  NodePort:  '<span>NodePort</span>：在每个节点上开放固定端口（30000-32767），外部客户端可通过 NodeIP:NodePort 访问',
+  LoadBalancer: '<span>LoadBalancer</span>：云厂商自动创建外部负载均衡器，流量经 LB → NodePort → Service → Pod'
+};
+
+let currentMode = 'ClusterIP';
+let animFrame = 0;
+let animHandle = null;
+let packets = [];
+
+// 颜色从 CSS 变量中读取
+function getCssVar(name) {
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+// 布局计算
+function getLayout(w, h) {
+  const cx = w / 2;
+  // 各层 Y 坐标
+  const yExt   = h * 0.08;
+  const yLB    = h * 0.20;
+  const yNode1 = h * 0.35;
+  const yNode2 = h * 0.35;
+  const ySvc   = h * 0.52;
+  const yPod   = h * 0.72;
+
+  const nodeW  = w * 0.28;
+  const nodeH  = h * 0.20;
+  const podW   = w * 0.13;
+  const podH   = h * 0.10;
+
+  const node1X = w * 0.18;
+  const node2X = w * 0.54;
+  const svcX   = cx;
+  const pod1X  = w * 0.20;
+  const pod2X  = w * 0.42;
+  const pod3X  = w * 0.64;
+
+  return {
+    w, h, cx,
+    ext:  { x: cx,    y: yExt },
+    lb:   { x: cx,    y: yLB  },
+    node1:{ x: node1X + nodeW/2, y: yNode1, w: nodeW, h: nodeH, label: 'Node 1\n130.211.97.55' },
+    node2:{ x: node2X + nodeW/2, y: yNode2, w: nodeW, h: nodeH, label: 'Node 2\n130.211.99.206' },
+    svc:  { x: svcX,  y: ySvc  },
+    pods: [
+      { x: pod1X, y: yPod, label: 'Pod A\n:8080' },
+      { x: pod2X, y: yPod, label: 'Pod B\n:8080' },
+      { x: pod3X, y: yPod, label: 'Pod C\n:8080' },
+    ],
+    nodeW, nodeH, podW, podH
+  };
+}
+
+// 绘制圆角矩形
+function roundRect(x, y, w, h, r, fill, stroke) {
+  ctx.beginPath();
+  ctx.roundRect(x - w/2, y - h/2, w, h, r);
+  if (fill)   { ctx.fillStyle = fill;   ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+
+// 绘制云朵/Service 节点
+function drawCloud(x, y, label, color) {
+  const r = 28;
+  ctx.beginPath();
+  ctx.arc(x,      y,      r,      0, Math.PI*2);
+  ctx.arc(x-22,   y+8,    r*0.7,  0, Math.PI*2);
+  ctx.arc(x+22,   y+8,    r*0.7,  0, Math.PI*2);
+  ctx.arc(x-12,   y-18,   r*0.6,  0, Math.PI*2);
+  ctx.arc(x+14,   y-16,   r*0.55, 0, Math.PI*2);
+  ctx.fillStyle = color || getCssVar('--overlay');
+  ctx.fill();
+  ctx.strokeStyle = getCssVar('--border');
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.fillStyle = getCssVar('--fg');
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lines = label.split('\n');
+  lines.forEach((line, i) => {
+    ctx.fillText(line, x, y + (i - (lines.length-1)/2) * 13);
+  });
+}
+
+// 绘制普通矩形节点
+function drawBox(x, y, w, h, label, bg, fg, borderColor) {
+  ctx.lineWidth = 1.5;
+  roundRect(x, y, w, h, 8, bg || getCssVar('--overlay'), borderColor || getCssVar('--border'));
+  ctx.fillStyle = fg || getCssVar('--fg');
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lines = label.split('\n');
+  lines.forEach((line, i) => {
+    ctx.fillText(line, x, y + (i - (lines.length-1)/2) * 14);
+  });
+}
+
+// 绘制箭头线
+function drawArrow(x1, y1, x2, y2, color, alpha) {
+  const a = alpha !== undefined ? alpha : 1;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.strokeStyle = color || getCssVar('--blue');
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 3]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arrowhead
+  const angle = Math.atan2(y2-y1, x2-x1);
+  const headLen = 8;
+  ctx.fillStyle = color || getCssVar('--blue');
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - headLen*Math.cos(angle-0.4), y2 - headLen*Math.sin(angle-0.4));
+  ctx.lineTo(x2 - headLen*Math.cos(angle+0.4), y2 - headLen*Math.sin(angle+0.4));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// 绘制运动的数据包
+function drawPacket(x, y, color) {
+  ctx.save();
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = color;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// 生成动画路径
+function getAnimPaths(layout, mode) {
+  const { ext, lb, node1, node2, svc, pods } = layout;
+
+  if (mode === 'ClusterIP') {
+    // 内部 Pod → Service → random Pod
+    return [
+      // Pod A → Service → Pod C
+      { points: [
+          { x: pods[0].x, y: pods[0].y - 20 },
+          { x: svc.x,     y: svc.y + 32 },
+          { x: pods[2].x, y: pods[2].y - 20 },
+        ], color: getCssVar('--blue'), delay: 0 },
+      // Pod B → Service → Pod A
+      { points: [
+          { x: pods[1].x, y: pods[1].y - 20 },
+          { x: svc.x,     y: svc.y + 32 },
+          { x: pods[0].x, y: pods[0].y - 20 },
+        ], color: getCssVar('--green'), delay: 40 },
+    ];
+  }
+
+  if (mode === 'NodePort') {
+    // External → Node1:30123 → Service → Pod
+    return [
+      { points: [
+          { x: ext.x,     y: ext.y + 16 },
+          { x: node1.x,   y: node1.y - node1.h/2 - 5 },
+          { x: svc.x,     y: svc.y + 32 },
+          { x: pods[1].x, y: pods[1].y - 20 },
+        ], color: getCssVar('--green'), delay: 0 },
+      { points: [
+          { x: ext.x,     y: ext.y + 16 },
+          { x: node2.x,   y: node2.y - node2.h/2 - 5 },
+          { x: svc.x,     y: svc.y + 32 },
+          { x: pods[2].x, y: pods[2].y - 20 },
+        ], color: getCssVar('--yellow'), delay: 50 },
+    ];
+  }
+
+  // LoadBalancer
+  return [
+    { points: [
+        { x: ext.x,     y: ext.y + 16 },
+        { x: lb.x,      y: lb.y - 5 },
+        { x: node1.x,   y: node1.y - node1.h/2 - 5 },
+        { x: svc.x,     y: svc.y + 32 },
+        { x: pods[0].x, y: pods[0].y - 20 },
+      ], color: getCssVar('--mauve'), delay: 0 },
+    { points: [
+        { x: ext.x,     y: ext.y + 16 },
+        { x: lb.x,      y: lb.y - 5 },
+        { x: node2.x,   y: node2.y - node2.h/2 - 5 },
+        { x: svc.x,     y: svc.y + 32 },
+        { x: pods[2].x, y: pods[2].y - 20 },
+      ], color: getCssVar('--peach'), delay: 45 },
+  ];
+}
+
+// 根据路径和进度插值位置
+function interpolatePath(points, t) {
+  const n = points.length - 1;
+  const segT = t * n;
+  const seg = Math.min(Math.floor(segT), n - 1);
+  const local = segT - seg;
+  const p0 = points[seg];
+  const p1 = points[seg + 1];
+  return {
+    x: p0.x + (p1.x - p0.x) * local,
+    y: p0.y + (p1.y - p0.y) * local
+  };
+}
+
+// 主渲染函数
+function render() {
+  const dpr = window.devicePixelRatio || 1;
+  const wrapper = canvas.parentElement;
+  const W = wrapper.clientWidth;
+  const H = wrapper.clientHeight;
+
+  if (canvas.width !== W * dpr || canvas.height !== H * dpr) {
+    canvas.width  = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width  = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.scale(dpr, dpr);
+  }
+
+  ctx.clearRect(0, 0, W, H);
+
+  const layout = getLayout(W, H);
+  const { ext, lb, node1, node2, svc, pods, podW, podH } = layout;
+  const mode = currentMode;
+
+  const blue   = getCssVar('--blue');
+  const green  = getCssVar('--green');
+  const mauve  = getCssVar('--mauve');
+  const yellow = getCssVar('--yellow');
+  const peach  = getCssVar('--peach');
+  const red    = getCssVar('--red');
+  const fg     = getCssVar('--fg');
+  const muted  = getCssVar('--muted');
+  const overlay= getCssVar('--overlay');
+  const border = getCssVar('--border');
+
+  // ── 背景框：Kubernetes Cluster ──────────────────────────────────────────────
+  ctx.save();
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.roundRect(W * 0.05, H * 0.28, W * 0.90, H * 0.60, 12);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = muted;
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'right';
+  ctx.fillText('Kubernetes Cluster', W * 0.95, H * 0.30);
+  ctx.restore();
+
+  // ── 节点框 ─────────────────────────────────────────────────────────────────
+  if (mode === 'NodePort' || mode === 'LoadBalancer') {
+    drawBox(node1.x, node1.y, node1.w, node1.h, node1.label, overlay, fg, border);
+    drawBox(node2.x, node2.y, node2.w, node2.h, node2.label, overlay, fg, border);
+
+    // NodePort 标签
+    const portColor = mode === 'NodePort' ? green : mauve;
+    const portText  = mode === 'NodePort' ? ':30123' : ':32143';
+    ctx.fillStyle = portColor;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(portText, node1.x, node1.y - node1.h/2 + 12);
+    ctx.fillText(portText, node2.x, node2.y - node2.h/2 + 12);
+  }
+
+  // ── Service (cloud) ─────────────────────────────────────────────────────────
+  const svcColor = mode === 'ClusterIP' ? blue
+                 : mode === 'NodePort'  ? green
+                 : mauve;
+  drawCloud(svc.x, svc.y, 'Service\n' + (mode === 'ClusterIP' ? '10.111.249.153' : 'kubia'), svcColor + '33');
+
+  // ── Pods ─────────────────────────────────────────────────────────────────────
+  pods.forEach((pod, i) => {
+    const podBg = (i === animFrame % 3 && animFrame > 0)
+      ? svcColor + '55'
+      : overlay;
+    drawBox(pod.x, pod.y, podW, podH, pod.label, podBg, fg, border);
+  });
+
+  // ── 连接线（静态背景） ────────────────────────────────────────────────────────
+  ctx.save();
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+
+  if (mode === 'ClusterIP') {
+    pods.forEach(pod => {
+      ctx.beginPath();
+      ctx.moveTo(pod.x, pod.y - podH/2);
+      ctx.lineTo(svc.x, svc.y + 32);
+      ctx.stroke();
+    });
+  } else {
+    // Node → Service
+    ctx.beginPath();
+    ctx.moveTo(node1.x, node1.y + node1.h/2);
+    ctx.lineTo(svc.x, svc.y - 32);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(node2.x, node2.y + node2.h/2);
+    ctx.lineTo(svc.x, svc.y - 32);
+    ctx.stroke();
+    // Service → Pods
+    pods.forEach(pod => {
+      ctx.beginPath();
+      ctx.moveTo(svc.x, svc.y + 32);
+      ctx.lineTo(pod.x, pod.y - podH/2);
+      ctx.stroke();
+    });
+  }
+  ctx.restore();
+
+  // ── External client ──────────────────────────────────────────────────────────
+  if (mode !== 'ClusterIP') {
+    drawBox(ext.x, ext.y, 100, 28, 'External Client', green + '44', green, green);
+  } else {
+    // ClusterIP: internal pod as source
+    drawBox(ext.x, ext.y + 10, 100, 28, 'Pod (内部调用方)', blue + '33', blue, blue);
+  }
+
+  // ── LoadBalancer box ─────────────────────────────────────────────────────────
+  if (mode === 'LoadBalancer') {
+    drawBox(lb.x, lb.y, 140, 28, 'Load Balancer\n130.211.53.173:80', mauve + '44', mauve, mauve);
+    drawArrow(ext.x, ext.y + 14, lb.x, lb.y - 14, mauve, 0.5);
+  }
+
+  // ── 动画数据包 ─────────────────────────────────────────────────────────────────
+  const paths = getAnimPaths(layout, mode);
+  const PERIOD = 80; // frames per packet cycle
+
+  paths.forEach(path => {
+    const t = ((animFrame - path.delay + PERIOD) % PERIOD) / PERIOD;
+    if (t >= 0 && t <= 1) {
+      const pos = interpolatePath(path.points, t);
+      drawPacket(pos.x, pos.y, path.color);
+    }
+  });
+
+  animFrame++;
+}
+
+// 动画循环
+function startAnim() {
+  if (animHandle) cancelAnimationFrame(animHandle);
+  function loop() {
+    render();
+    animHandle = requestAnimationFrame(loop);
+  }
+  animHandle = requestAnimationFrame(loop);
+}
+
+// 切换模式
+function setMode(mode) {
+  currentMode = mode;
+  animFrame = 0;
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.mode === mode);
+  });
+
+  desc.innerHTML = DESCRIPTIONS[mode];
+}
+
+// resize
+function onResize() {
+  const dpr = window.devicePixelRatio || 1;
+  const wrapper = canvas.parentElement;
+  canvas.width  = wrapper.clientWidth  * dpr;
+  canvas.height = wrapper.clientHeight * dpr;
+  canvas.style.width  = wrapper.clientWidth  + 'px';
+  canvas.style.height = wrapper.clientHeight + 'px';
+  ctx.scale(dpr, dpr);
+}
+
+// tab click
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+
+window.addEventListener('resize', onResize);
+
+// ─── 2. syncTheme 和初始化在所有声明之后 ─────────────────────────────────────────
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+
+syncTheme();
+startAnim();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

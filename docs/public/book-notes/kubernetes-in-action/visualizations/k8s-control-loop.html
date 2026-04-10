@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>K8s 控制循环演示</title>
+<style>
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --surface: #181825;
+    --border: #45475a; --overlay: #313244; --green: #a6e3a1; --red: #f38ba8;
+    --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --surface: #e6e9ef;
+    --border: #ccd0da; --overlay: #dce0e8; --green: #40a02b; --red: #d20f39;
+    --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    padding: 16px;
+    min-height: 100vh;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--blue);
+    margin-bottom: 12px;
+    text-align: center;
+  }
+
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .pod-grid {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-height: 60px;
+    align-items: center;
+  }
+
+  .pod {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pod-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    border: 2px solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    transition: all 0.4s ease;
+    position: relative;
+  }
+
+  .pod-icon.running {
+    background: color-mix(in srgb, var(--green) 15%, transparent);
+    border-color: var(--green);
+  }
+
+  .pod-icon.failed {
+    background: color-mix(in srgb, var(--red) 15%, transparent);
+    border-color: var(--red);
+    animation: shake 0.4s ease;
+  }
+
+  .pod-icon.creating {
+    background: color-mix(in srgb, var(--yellow) 15%, transparent);
+    border-color: var(--yellow);
+    animation: pulse 0.8s ease infinite;
+  }
+
+  .pod-icon.empty {
+    background: color-mix(in srgb, var(--muted) 10%, transparent);
+    border-color: var(--border);
+    border-style: dashed;
+    opacity: 0.5;
+  }
+
+  .pod-label {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: monospace;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.95); }
+  }
+
+  .loop-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .loop-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 10px;
+    text-align: center;
+  }
+
+  .loop-steps {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .loop-step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+    border-radius: 6px;
+    border: 1.5px solid var(--border);
+    background: var(--overlay);
+    transition: all 0.3s ease;
+    text-align: center;
+  }
+
+  .loop-step.active {
+    border-color: var(--mauve);
+    background: color-mix(in srgb, var(--mauve) 12%, transparent);
+  }
+
+  .loop-step .step-icon { font-size: 20px; }
+  .loop-step .step-name { font-size: 11px; font-weight: 600; color: var(--fg); }
+  .loop-step .step-desc { font-size: 10px; color: var(--muted); line-height: 1.3; }
+
+  .loop-arrow {
+    font-size: 16px;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+
+  .status-log {
+    background: var(--overlay);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    min-height: 64px;
+    margin-bottom: 12px;
+    color: var(--fg);
+    overflow: hidden;
+  }
+
+  .log-line { animation: fadeIn 0.3s ease; }
+  .log-observe { color: var(--blue); }
+  .log-diff    { color: var(--yellow); }
+  .log-act     { color: var(--green); }
+  .log-warn    { color: var(--red); }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  button {
+    padding: 7px 16px;
+    border-radius: 6px;
+    border: 1.5px solid;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  }
+
+  button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  button:active { transform: translateY(0); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-danger {
+    background: color-mix(in srgb, var(--red) 15%, transparent);
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .btn-primary {
+    background: color-mix(in srgb, var(--blue) 15%, transparent);
+    border-color: var(--blue);
+    color: var(--blue);
+  }
+
+  .btn-neutral {
+    background: color-mix(in srgb, var(--muted) 15%, transparent);
+    border-color: var(--muted);
+    color: var(--muted);
+  }
+
+  .counters {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+
+  .counter {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .counter-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+
+  .dot-desired { background: var(--blue); }
+  .dot-actual  { background: var(--green); }
+  .dot-diff    { background: var(--red); }
+</style>
+</head>
+<body>
+
+<h2>Kubernetes 控制循环（Reconciliation Loop）演示</h2>
+
+<div class="main-layout">
+  <div class="panel">
+    <div class="panel-title">期望状态 (Desired) — ReplicaSet replicas: 3</div>
+    <div class="pod-grid" id="desired-pods"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">实际状态 (Actual) — 当前运行中的 Pod</div>
+    <div class="pod-grid" id="actual-pods"></div>
+  </div>
+</div>
+
+<div class="loop-panel">
+  <div class="loop-title">Observe → Diff → Act 控制循环</div>
+  <div class="loop-steps">
+    <div class="loop-step" id="step-observe">
+      <span class="step-icon">👁️</span>
+      <span class="step-name">Observe</span>
+      <span class="step-desc">Watch API Server<br>感知状态变化</span>
+    </div>
+    <div class="loop-arrow">→</div>
+    <div class="loop-step" id="step-diff">
+      <span class="step-icon">⚖️</span>
+      <span class="step-name">Diff</span>
+      <span class="step-desc">期望 vs 实际<br>计算差异</span>
+    </div>
+    <div class="loop-arrow">→</div>
+    <div class="loop-step" id="step-act">
+      <span class="step-icon">⚡</span>
+      <span class="step-name">Act</span>
+      <span class="step-desc">调用 API Server<br>消除差异</span>
+    </div>
+    <div class="loop-arrow">↩</div>
+  </div>
+</div>
+
+<div class="counters">
+  <div class="counter">
+    <div class="counter-dot dot-desired"></div>
+    <span>期望: <strong id="cnt-desired">3</strong></span>
+  </div>
+  <div class="counter">
+    <div class="counter-dot dot-actual"></div>
+    <span>实际: <strong id="cnt-actual">3</strong></span>
+  </div>
+  <div class="counter">
+    <div class="counter-dot dot-diff"></div>
+    <span>差异: <strong id="cnt-diff">0</strong></span>
+  </div>
+</div>
+
+<div class="status-log" id="log">
+  <div class="log-line log-observe">[Controller] 初始化完成，集群处于稳定状态 ✓</div>
+</div>
+
+<div class="controls">
+  <button class="btn-danger" id="btn-kill" onclick="killPod()">⚠️ 触发故障（删除 Pod）</button>
+  <button class="btn-primary" id="btn-scale-up" onclick="scaleTo(4)">➕ 扩容到 4 副本</button>
+  <button class="btn-primary" id="btn-scale-down" onclick="scaleTo(2)">➖ 缩容到 2 副本</button>
+  <button class="btn-neutral" onclick="reset()">↺ 重置</button>
+</div>
+
+<script>
+// ─── 1. State ────────────────────────────────────────────────────────────────
+const POD_EMOJIS = ['🔵', '🟢', '🟣', '🟡', '🟠'];
+
+let desired = 3;
+let actualPods = [];   // array of { id, state: 'running'|'failed'|'creating' }
+let nextPodId = 3;
+let animating = false;
+
+// ─── 2. Helpers ──────────────────────────────────────────────────────────────
+function podLabel(id) {
+  return `pod-${id}`;
+}
+
+function addLog(msg, cls) {
+  const log = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = `log-line ${cls}`;
+  line.textContent = msg;
+  log.appendChild(line);
+  // keep last 4 lines
+  while (log.children.length > 4) log.removeChild(log.firstChild);
+}
+
+function setStep(name) {
+  ['observe', 'diff', 'act'].forEach(s => {
+    document.getElementById(`step-${s}`).classList.toggle('active', s === name);
+  });
+}
+
+function clearSteps() {
+  ['observe', 'diff', 'act'].forEach(s => {
+    document.getElementById(`step-${s}`).classList.remove('active');
+  });
+}
+
+function updateCounters() {
+  const running = actualPods.filter(p => p.state === 'running').length;
+  const diff = desired - running;
+  document.getElementById('cnt-desired').textContent = desired;
+  document.getElementById('cnt-actual').textContent = running;
+  document.getElementById('cnt-diff').textContent = diff > 0 ? `+${diff}` : diff;
+}
+
+// ─── 3. Render ───────────────────────────────────────────────────────────────
+function render() {
+  // Desired pods
+  const desiredEl = document.getElementById('desired-pods');
+  desiredEl.innerHTML = '';
+  for (let i = 0; i < desired; i++) {
+    const div = document.createElement('div');
+    div.className = 'pod';
+    div.innerHTML = `
+      <div class="pod-icon running">${POD_EMOJIS[i % POD_EMOJIS.length]}</div>
+      <div class="pod-label">pod-${i}</div>`;
+    desiredEl.appendChild(div);
+  }
+
+  // Actual pods
+  const actualEl = document.getElementById('actual-pods');
+  actualEl.innerHTML = '';
+  actualPods.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'pod';
+    const icon = document.createElement('div');
+    icon.className = `pod-icon ${p.state}`;
+    icon.textContent = p.state === 'failed' ? '💥' : (p.state === 'creating' ? '⏳' : POD_EMOJIS[p.id % POD_EMOJIS.length]);
+    div.appendChild(icon);
+    const lbl = document.createElement('div');
+    lbl.className = 'pod-label';
+    lbl.textContent = podLabel(p.id);
+    div.appendChild(lbl);
+    actualEl.appendChild(div);
+  });
+
+  updateCounters();
+}
+
+// ─── 4. Actions ──────────────────────────────────────────────────────────────
+function setButtons(disabled) {
+  ['btn-kill', 'btn-scale-up', 'btn-scale-down'].forEach(id => {
+    document.getElementById(id).disabled = disabled;
+  });
+}
+
+async function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function runReconcile() {
+  animating = true;
+  setButtons(true);
+
+  // Step 1: Observe
+  setStep('observe');
+  addLog('[Observe] Controller 监测到集群状态变化...', 'log-observe');
+  render();
+  await sleep(800);
+
+  // Step 2: Diff
+  setStep('diff');
+  const running = actualPods.filter(p => p.state === 'running').length;
+  const diff = desired - running;
+  if (diff > 0) {
+    addLog(`[Diff] 期望 ${desired} 个 Pod，实际运行 ${running} 个，差异 = +${diff}`, 'log-diff');
+  } else if (diff < 0) {
+    addLog(`[Diff] 期望 ${desired} 个 Pod，实际运行 ${running} 个，差异 = ${diff}`, 'log-diff');
+  } else {
+    addLog(`[Diff] 期望 = 实际 = ${desired}，集群已稳定 ✓`, 'log-diff');
+    clearSteps();
+    render();
+    animating = false;
+    setButtons(false);
+    return;
+  }
+  await sleep(800);
+
+  // Step 3: Act
+  setStep('act');
+  if (diff > 0) {
+    addLog(`[Act] 创建 ${diff} 个新 Pod...`, 'log-act');
+    // Mark failed pods as creating first
+    actualPods.forEach(p => { if (p.state === 'failed') p.state = 'creating'; });
+    // Add new pods if needed
+    const toAdd = diff - actualPods.filter(p => p.state === 'creating').length;
+    for (let i = 0; i < toAdd; i++) {
+      actualPods.push({ id: nextPodId++, state: 'creating' });
+    }
+    render();
+    await sleep(1200);
+    // Transition creating → running
+    actualPods.forEach(p => { if (p.state === 'creating') p.state = 'running'; });
+    addLog('[Act] 新 Pod 已就绪，进入 Running 状态 ✓', 'log-act');
+  } else {
+    const toRemove = Math.abs(diff);
+    addLog(`[Act] 删除 ${toRemove} 个多余 Pod...`, 'log-act');
+    for (let i = 0; i < toRemove; i++) {
+      if (actualPods.length > 0) actualPods.pop();
+    }
+  }
+  render();
+  await sleep(400);
+
+  clearSteps();
+  animating = false;
+  setButtons(false);
+}
+
+async function killPod() {
+  if (animating) return;
+  const running = actualPods.filter(p => p.state === 'running');
+  if (running.length === 0) {
+    addLog('[警告] 没有可删除的 Pod', 'log-warn');
+    return;
+  }
+  // Kill first running pod
+  running[0].state = 'failed';
+  addLog(`[故障] ${podLabel(running[0].id)} 发生崩溃！`, 'log-warn');
+  render();
+  await sleep(500);
+  await runReconcile();
+}
+
+async function scaleTo(n) {
+  if (animating) return;
+  desired = n;
+  addLog(`[用户操作] 修改 ReplicaSet replicas: ${n}`, 'log-diff');
+  await runReconcile();
+}
+
+function reset() {
+  if (animating) return;
+  desired = 3;
+  nextPodId = 3;
+  actualPods = [
+    { id: 0, state: 'running' },
+    { id: 1, state: 'running' },
+    { id: 2, state: 'running' }
+  ];
+  clearSteps();
+  const log = document.getElementById('log');
+  log.innerHTML = '<div class="log-line log-observe">[Controller] 已重置，集群处于稳定状态 ✓</div>';
+  render();
+}
+
+// ─── 5. Theme sync — ALL const/let/function declarations above this line ─────
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

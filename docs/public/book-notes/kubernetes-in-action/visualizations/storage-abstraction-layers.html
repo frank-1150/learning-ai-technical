@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K8s 存储抽象层次图</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --fg: #cdd6f4;
+    --muted: #6c7086;
+    --surface: #181825;
+    --border: #45475a;
+    --overlay: #313244;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    --blue: #89b4fa;
+    --yellow: #f9e2af;
+    --mauve: #cba6f7;
+    --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5;
+    --fg: #4c4f69;
+    --muted: #8c8fa1;
+    --surface: #e6e9ef;
+    --border: #ccd0da;
+    --overlay: #dce0e8;
+    --green: #40a02b;
+    --red: #d20f39;
+    --blue: #1e66f5;
+    --yellow: #df8e1d;
+    --mauve: #8839ef;
+    --peach: #fe640b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 13px;
+    padding: 16px;
+    min-height: 100vh;
+  }
+
+  h2 {
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .tab {
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  .tab:hover { border-color: var(--blue); color: var(--blue); }
+  .tab.active { background: var(--blue); color: var(--bg); border-color: var(--blue); font-weight: 600; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ---- STATIC LAYERS PANEL ---- */
+  .layer-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .layer {
+    border-radius: 10px;
+    border: 1.5px solid var(--border);
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+  }
+  .layer:hover { box-shadow: 0 0 0 2px var(--blue); border-color: var(--blue); }
+  .layer.selected { box-shadow: 0 0 0 2px var(--mauve); border-color: var(--mauve); }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--overlay);
+  }
+
+  .layer-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .layer-title { font-weight: 600; font-size: 13px; }
+  .layer-badge {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .layer-detail {
+    padding: 10px 14px;
+    background: var(--surface);
+    display: none;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+  }
+  .layer.selected .layer-detail { display: block; }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .detail-item {
+    background: var(--overlay);
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .detail-label { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+  .detail-value { font-size: 12px; color: var(--fg); font-weight: 500; }
+
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 2px 0;
+  }
+  .connector-line {
+    flex: 1;
+    max-width: 80px;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ---- BINDING PANEL ---- */
+  .binding-container {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  .binding-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .binding-col {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+  }
+
+  .binding-col-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+
+  .pv-card, .pvc-card {
+    background: var(--overlay);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+    border: 1.5px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .pv-card:hover, .pvc-card:hover { border-color: var(--blue); }
+  .pv-card.bound { border-color: var(--green); }
+  .pvc-card.bound { border-color: var(--green); }
+  .pv-card.available { border-color: var(--yellow); }
+  .pvc-card.pending { border-color: var(--yellow); }
+
+  .card-name { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+  .card-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; }
+  .card-status {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 2px 7px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .status-available { background: rgba(249,226,175,0.15); color: var(--yellow); }
+  .status-bound { background: rgba(166,227,161,0.15); color: var(--green); }
+  .status-pending { background: rgba(137,180,250,0.15); color: var(--blue); }
+  .status-released { background: rgba(243,139,168,0.15); color: var(--red); }
+
+  .binding-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 4px;
+    min-width: 60px;
+  }
+  .arrow-svg { color: var(--muted); }
+  .arrow-label { font-size: 10px; color: var(--muted); text-align: center; }
+
+  .binding-info {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .binding-info.match { color: var(--green); border-color: var(--green); }
+  .binding-info.mismatch { color: var(--red); border-color: var(--red); }
+
+  /* ---- DYNAMIC PROVISIONING PANEL ---- */
+  .flow-container {
+    max-width: 660px;
+    margin: 0 auto;
+  }
+
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-radius: 10px;
+    border: 1.5px solid var(--border);
+    transition: all 0.3s;
+    opacity: 0.45;
+  }
+  .flow-step.active-step {
+    opacity: 1;
+    border-color: var(--blue);
+    background: var(--overlay);
+  }
+  .flow-step.done-step {
+    opacity: 0.85;
+    border-color: var(--green);
+  }
+
+  .step-number {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .flow-step.active-step .step-number { background: var(--blue); color: var(--bg); }
+  .flow-step.done-step .step-number { background: var(--green); color: var(--bg); }
+
+  .step-body {}
+  .step-title { font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+  .step-desc { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+  .flow-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  .btn {
+    padding: 6px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--overlay);
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  .btn:hover { border-color: var(--blue); color: var(--blue); }
+  .btn.primary { background: var(--blue); color: var(--bg); border-color: var(--blue); font-weight: 600; }
+  .btn.primary:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .step-counter { font-size: 12px; color: var(--muted); }
+
+  .highlight { color: var(--blue); font-weight: 600; }
+  .highlight-green { color: var(--green); font-weight: 600; }
+  .highlight-yellow { color: var(--yellow); font-weight: 600; }
+  .highlight-mauve { color: var(--mauve); font-weight: 600; }
+
+  .code-inline {
+    background: var(--overlay);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--peach);
+  }
+
+  /* ---- ACCESS MODES PANEL ---- */
+  .access-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    max-width: 640px;
+    margin: 0 auto 16px;
+  }
+  .access-card {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .access-card:hover { border-color: var(--blue); }
+  .access-card.selected { border-color: var(--mauve); box-shadow: 0 0 0 2px var(--mauve); }
+  .access-icon { font-size: 28px; margin-bottom: 8px; }
+  .access-mode { font-size: 11px; font-weight: 700; margin-bottom: 4px; color: var(--yellow); }
+  .access-abbr { font-size: 13px; font-weight: 800; color: var(--fg); margin-bottom: 4px; }
+  .access-short { font-size: 11px; color: var(--muted); }
+
+  .access-detail {
+    max-width: 640px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+    min-height: 90px;
+    transition: all 0.2s;
+  }
+
+  @media (max-width: 500px) {
+    .access-grid { grid-template-columns: 1fr; }
+    .binding-header { flex-direction: column; }
+    .detail-grid { grid-template-columns: 1fr; }
+    .binding-arrow { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<h2>K8s 存储抽象层次图</h2>
+<p class="subtitle">探索 Kubernetes 从临时存储到动态持久化的完整抽象体系</p>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('layers')">存储抽象层次</div>
+  <div class="tab" onclick="switchTab('binding')">PV/PVC 绑定</div>
+  <div class="tab" onclick="switchTab('dynamic')">动态供应流程</div>
+  <div class="tab" onclick="switchTab('access')">访问模式</div>
+</div>
+
+<!-- PANEL 1: LAYERS -->
+<div id="panel-layers" class="panel active">
+  <div class="layer-stack">
+
+    <div class="layer" id="l-pod" onclick="selectLayer('l-pod')">
+      <div class="layer-header">
+        <div class="layer-icon" style="background: rgba(137,180,250,0.15);">🚀</div>
+        <div>
+          <div class="layer-title">Pod（开发者视角）</div>
+          <div style="font-size:11px;color:var(--muted);">只需引用 PVC 名称，无需了解底层存储</div>
+        </div>
+        <div class="layer-badge" style="background:rgba(137,180,250,0.15);color:var(--blue);">Namespace 级</div>
+      </div>
+      <div class="layer-detail">
+        <div>Pod 的 volumes 字段引用 PVC 名称；容器通过 <span class="code-inline">volumeMounts</span> 挂载。整个过程对底层存储技术完全透明——同一份 YAML 可以部署到任意云平台。</div>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="detail-label">引用方式</div>
+            <div class="detail-value">persistentVolumeClaim: claimName</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">AI 场景</div>
+            <div class="detail-value">推理服务挂载模型权重 (ReadOnlyMany)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <span>声明式引用 ↓</span>
+      <div class="connector-line"></div>
+    </div>
+
+    <div class="layer" id="l-pvc" onclick="selectLayer('l-pvc')">
+      <div class="layer-header">
+        <div class="layer-icon" style="background: rgba(166,227,161,0.15);">📋</div>
+        <div>
+          <div class="layer-title">PersistentVolumeClaim（PVC）</div>
+          <div style="font-size:11px;color:var(--muted);">用户的存储申请单：声明容量、访问模式</div>
+        </div>
+        <div class="layer-badge" style="background:rgba(166,227,161,0.15);color:var(--green);">Namespace 级</div>
+      </div>
+      <div class="layer-detail">
+        <div>PVC 是开发者创建的存储"申请单"。它不指定任何基础设施细节，只说明 <span class="highlight-yellow">需要多少存储</span> 和 <span class="highlight-yellow">什么访问模式</span>。Kubernetes 自动寻找满足条件的 PV 进行绑定。</div>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="detail-label">关键字段</div>
+            <div class="detail-value">storage: 1Gi, accessModes: RWO</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">绑定触发</div>
+            <div class="detail-value">创建后自动由 Kubernetes 完成绑定</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">storageClassName: ""</div>
+            <div class="detail-value">强制绑定预创建的 PV（禁用动态供应）</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">storageClassName: fast</div>
+            <div class="detail-value">触发 StorageClass 动态供应新 PV</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <span>自动绑定 ↓</span>
+      <div class="connector-line"></div>
+    </div>
+
+    <div class="layer" id="l-pv" onclick="selectLayer('l-pv')">
+      <div class="layer-header">
+        <div class="layer-icon" style="background: rgba(203,166,247,0.15);">💾</div>
+        <div>
+          <div class="layer-title">PersistentVolume（PV）</div>
+          <div style="font-size:11px;color:var(--muted);">集群存储池：管理员创建或 StorageClass 动态生成</div>
+        </div>
+        <div class="layer-badge" style="background:rgba(203,166,247,0.15);color:var(--mauve);">集群级</div>
+      </div>
+      <div class="layer-detail">
+        <div>PV 是集群管理员预置的存储资源，描述实际底层存储的容量、访问模式和回收策略。PV 不属于任何 Namespace，是集群级别的资源。</div>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="detail-label">生命周期状态</div>
+            <div class="detail-value">Available → Bound → Released</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">回收策略</div>
+            <div class="detail-value">Retain（保留）/ Delete（删除底层存储）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <span>StorageClass 动态供应 或 管理员手动创建 ↓</span>
+      <div class="connector-line"></div>
+    </div>
+
+    <div class="layer" id="l-sc" onclick="selectLayer('l-sc')">
+      <div class="layer-header">
+        <div class="layer-icon" style="background: rgba(249,226,175,0.15);">⚙️</div>
+        <div>
+          <div class="layer-title">StorageClass</div>
+          <div style="font-size:11px;color:var(--muted);">存储"配方"：定义 provisioner 和参数，自动创建 PV</div>
+        </div>
+        <div class="layer-badge" style="background:rgba(249,226,175,0.15);color:var(--yellow);">集群级</div>
+      </div>
+      <div class="layer-detail">
+        <div>StorageClass 让管理员无需预创建大量 PV，而是定义"如何创建存储"的规则。PVC 引用 StorageClass 后，provisioner 自动创建符合要求的 PV 并完成绑定。</div>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="detail-label">provisioner 示例</div>
+            <div class="detail-value">kubernetes.io/gce-pd, k8s.io/aws-ebs</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">默认 StorageClass</div>
+            <div class="detail-value">PVC 不指定 storageClassName 时自动使用</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="connector-line"></div>
+      <span>底层实现 ↓</span>
+      <div class="connector-line"></div>
+    </div>
+
+    <div class="layer" id="l-storage" onclick="selectLayer('l-storage')">
+      <div class="layer-header">
+        <div class="layer-icon" style="background: rgba(250,179,135,0.15);">🗄️</div>
+        <div>
+          <div class="layer-title">实际存储基础设施</div>
+          <div style="font-size:11px;color:var(--muted);">GCE PD / AWS EBS / NFS / Ceph — 对开发者透明</div>
+        </div>
+        <div class="layer-badge" style="background:rgba(250,179,135,0.15);color:var(--peach);">基础设施层</div>
+      </div>
+      <div class="layer-detail">
+        <div>真实的物理或网络存储系统。由云提供商或 IT 团队维护，通过 StorageClass provisioner 暴露给 Kubernetes。开发者完全无需感知这一层的存在。</div>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="detail-label">云存储</div>
+            <div class="detail-value">GCE PD, AWS EBS, Azure Disk</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">网络存储 (NFS/Ceph)</div>
+            <div class="detail-value">支持 ReadWriteMany，适合分布式训练</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">AI 推理模型存储</div>
+            <div class="detail-value">NFS ReadOnlyMany，多推理 Pod 并发挂载</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">训练 Checkpoint</div>
+            <div class="detail-value">Ceph RBD / NFS ReadWriteMany</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- PANEL 2: BINDING -->
+<div id="panel-binding" class="panel">
+  <div class="binding-container">
+    <div style="text-align:center;margin-bottom:12px;font-size:12px;color:var(--muted);">
+      点击 PV 和 PVC 卡片，查看绑定匹配分析
+    </div>
+    <div class="binding-header">
+      <div class="binding-col">
+        <div class="binding-col-title">PersistentVolumes（集群级）</div>
+
+        <div class="pv-card available" id="pv1" onclick="selectCard('pv', 'pv1')">
+          <span class="card-status status-available">Available</span>
+          <div class="card-name">mongodb-pv</div>
+          <div class="card-meta">
+            <span>1Gi</span>
+            <span>RWO, ROX</span>
+            <span>Retain</span>
+            <span style="color:var(--peach)">GCE PD</span>
+          </div>
+        </div>
+
+        <div class="pv-card available" id="pv2" onclick="selectCard('pv', 'pv2')">
+          <span class="card-status status-available">Available</span>
+          <div class="card-name">nfs-model-pv</div>
+          <div class="card-meta">
+            <span>200Gi</span>
+            <span>ROX, RWX</span>
+            <span>Retain</span>
+            <span style="color:var(--peach)">NFS</span>
+          </div>
+        </div>
+
+        <div class="pv-card bound" id="pv3" onclick="selectCard('pv', 'pv3')">
+          <span class="card-status status-bound">Bound</span>
+          <div class="card-name">postgres-pv</div>
+          <div class="card-meta">
+            <span>50Gi</span>
+            <span>RWO</span>
+            <span>Delete</span>
+            <span style="color:var(--peach)">AWS EBS</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="binding-arrow">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="arrow-svg">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+        <div class="arrow-label">Kubernetes<br>自动绑定</div>
+      </div>
+
+      <div class="binding-col">
+        <div class="binding-col-title">PersistentVolumeClaims（Namespace 级）</div>
+
+        <div class="pvc-card pending" id="pvc1" onclick="selectCard('pvc', 'pvc1')">
+          <span class="card-status status-pending">Pending</span>
+          <div class="card-name">mongodb-pvc</div>
+          <div class="card-meta">
+            <span>需要 1Gi</span>
+            <span>RWO</span>
+            <span style="color:var(--muted)">storageClass: ""</span>
+          </div>
+        </div>
+
+        <div class="pvc-card pending" id="pvc2" onclick="selectCard('pvc', 'pvc2')">
+          <span class="card-status status-pending">Pending</span>
+          <div class="card-name">llm-weights-pvc</div>
+          <div class="card-meta">
+            <span>需要 150Gi</span>
+            <span>ROX</span>
+            <span style="color:var(--muted)">storageClass: ""</span>
+          </div>
+        </div>
+
+        <div class="pvc-card bound" id="pvc3" onclick="selectCard('pvc', 'pvc3')">
+          <span class="card-status status-bound">Bound</span>
+          <div class="card-name">postgres-pvc</div>
+          <div class="card-meta">
+            <span>需要 30Gi</span>
+            <span>RWO</span>
+            <span style="color:var(--green)">→ postgres-pv</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="binding-info" id="binding-result">
+      点击上方的 PV 和 PVC 卡片，查看绑定匹配分析
+    </div>
+  </div>
+</div>
+
+<!-- PANEL 3: DYNAMIC PROVISIONING -->
+<div id="panel-dynamic" class="panel">
+  <div class="flow-container">
+    <div class="flow-steps" id="flow-steps">
+      <div class="flow-step" id="step-1">
+        <div class="step-number">1</div>
+        <div class="step-body">
+          <div class="step-title">Admin 部署 StorageClass</div>
+          <div class="step-desc">集群管理员创建 StorageClass 资源（如 <span class="code-inline">fast</span>），指定 provisioner 为 <span class="code-inline">kubernetes.io/gce-pd</span>，type 为 <span class="code-inline">pd-ssd</span>。也可将某个 StorageClass 标记为默认。</div>
+        </div>
+      </div>
+
+      <div class="flow-step" id="step-2">
+        <div class="step-number">2</div>
+        <div class="step-body">
+          <div class="step-title">开发者创建 PVC（引用 StorageClass）</div>
+          <div class="step-desc">开发者提交 PVC manifest，指定 <span class="code-inline">storageClassName: fast</span>、所需容量和访问模式。此时无任何 PV 存在，PVC 处于 <span class="highlight-yellow">Pending</span> 状态。</div>
+        </div>
+      </div>
+
+      <div class="flow-step" id="step-3">
+        <div class="step-number">3</div>
+        <div class="step-body">
+          <div class="step-title">Kubernetes 查找 StorageClass</div>
+          <div class="step-desc">Kubernetes 控制平面检测到新 PVC，查找其引用的 StorageClass <span class="highlight">fast</span>，读取其 provisioner 配置和参数。</div>
+        </div>
+      </div>
+
+      <div class="flow-step" id="step-4">
+        <div class="step-number">4</div>
+        <div class="step-body">
+          <div class="step-title">Provisioner 自动创建实际存储</div>
+          <div class="step-desc">Provisioner（<span class="code-inline">kubernetes.io/gce-pd</span>）被调用，在 GCP 上自动创建一块 SSD 磁盘，容量和 zone 按 StorageClass parameters 和 PVC 请求确定。</div>
+        </div>
+      </div>
+
+      <div class="flow-step" id="step-5">
+        <div class="step-number">5</div>
+        <div class="step-body">
+          <div class="step-title">自动创建 PV 并绑定到 PVC</div>
+          <div class="step-desc">Provisioner 创建 PV 资源，引用刚才创建的磁盘，并立即将 PV 与 PVC 绑定。PVC 状态变为 <span class="highlight-green">Bound</span>。动态供应的 PV 默认 reclaimPolicy 为 <span class="highlight-yellow">Delete</span>。</div>
+        </div>
+      </div>
+
+      <div class="flow-step" id="step-6">
+        <div class="step-number">6</div>
+        <div class="step-body">
+          <div class="step-title">Pod 创建并挂载存储</div>
+          <div class="step-desc">开发者创建 Pod，volumes 中引用 PVC 名称。Kubernetes 调度器将 Pod 调度到节点后，kubelet 自动将 PV 对应的磁盘挂载到容器指定路径。全程无需人工干预。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-controls">
+      <button class="btn" id="btn-prev" onclick="stepPrev()" disabled>← 上一步</button>
+      <span class="step-counter" id="step-counter">第 0 / 6 步</span>
+      <button class="btn primary" id="btn-next" onclick="stepNext()">下一步 →</button>
+      <button class="btn" onclick="resetSteps()">重置</button>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL 4: ACCESS MODES -->
+<div id="panel-access" class="panel">
+  <div class="access-grid">
+    <div class="access-card" id="ac-rwo" onclick="selectAccess('rwo')">
+      <div class="access-icon">🔒</div>
+      <div class="access-abbr">RWO</div>
+      <div class="access-mode">ReadWriteOnce</div>
+      <div class="access-short">单节点读写</div>
+    </div>
+    <div class="access-card" id="ac-rox" onclick="selectAccess('rox')">
+      <div class="access-icon">👥</div>
+      <div class="access-abbr">ROX</div>
+      <div class="access-mode">ReadOnlyMany</div>
+      <div class="access-short">多节点只读</div>
+    </div>
+    <div class="access-card" id="ac-rwx" onclick="selectAccess('rwx')">
+      <div class="access-icon">🔓</div>
+      <div class="access-abbr">RWX</div>
+      <div class="access-mode">ReadWriteMany</div>
+      <div class="access-short">多节点读写</div>
+    </div>
+  </div>
+  <div class="access-detail" id="access-detail">
+    点击上方访问模式卡片，查看详细说明和 AI 场景应用。
+  </div>
+</div>
+
+<script>
+// =====================
+// ALL DATA & STATE FIRST
+// =====================
+
+const accessData = {
+  rwo: {
+    title: 'ReadWriteOnce (RWO) — 单节点读写',
+    desc: '同时只有一个节点可以以读写模式挂载该 Volume。注意：是节点级别的限制，不是 Pod 级别——同一节点上的多个 Pod 可以同时挂载。',
+    usecases: '数据库（PostgreSQL、MySQL）、单实例有状态服务',
+    storage: 'AWS EBS, GCE PD, Azure Disk（块存储天然不支持多节点挂载）',
+    ai: '训练单机 checkpoint 写入、模型训练时的临时工作目录',
+    color: 'var(--yellow)'
+  },
+  rox: {
+    title: 'ReadOnlyMany (ROX) — 多节点并发只读',
+    desc: '多个节点可以同时以只读模式挂载该 Volume。这是 AI 推理集群中分发模型权重的标准模式——多个 GPU 节点上的推理 Pod 同时只读挂载同一份模型文件。',
+    usecases: '模型权重分发（LLM 推理服务）、静态配置文件、共享数据集',
+    storage: 'NFS, Ceph RBD (只读模式), 云对象存储挂载',
+    ai: '核心场景：70B+ 参数模型权重（~140GB），NFS 挂载后多个 vLLM Pod 并发只读，无需为每个 Pod 复制一份模型文件',
+    color: 'var(--green)'
+  },
+  rwx: {
+    title: 'ReadWriteMany (RWX) — 多节点并发读写',
+    desc: '多个节点可以同时以读写模式挂载该 Volume。这是限制最宽松但底层存储要求最高的模式——只有 NFS、CephFS 等网络文件系统天然支持此模式，块存储（EBS、GCE PD）通常不支持。',
+    usecases: '分布式训练 checkpoint、多 worker 共享日志目录、分布式数据处理',
+    storage: 'NFS, CephFS, Azure Files（块存储如 EBS/GCE PD 通常不支持）',
+    ai: '分布式训练（数十个 GPU worker 同时写入 checkpoint）、Horovod / DeepSpeed 的参数同步目录',
+    color: 'var(--blue)'
+  }
+};
+
+const bindingRules = {
+  'pv1-pvc1': {
+    match: true,
+    msg: '✓ 匹配成功！mongodb-pvc 申请 1Gi RWO，mongodb-pv 提供 1Gi 并支持 RWO+ROX。容量满足，访问模式满足，Kubernetes 会将两者绑定。'
+  },
+  'pv1-pvc2': {
+    match: false,
+    msg: '✗ 不匹配：llm-weights-pvc 申请 150Gi ROX，但 mongodb-pv 只有 1Gi（容量不足）。即使访问模式满足，容量不足也无法绑定。'
+  },
+  'pv1-pvc3': {
+    match: false,
+    msg: '✗ 不匹配：postgres-pvc 绑定的 PVC 已是 Bound 状态，可以看到 postgres-pvc 已绑定到 postgres-pv，无法再绑定其他 PV。'
+  },
+  'pv2-pvc1': {
+    match: false,
+    msg: '✗ 不完美匹配：nfs-model-pv 有 200Gi，远大于 mongodb-pvc 申请的 1Gi。技术上容量满足，访问模式也满足（nfs-model-pv 支持 ROX+RWX，mongodb-pvc 申请 RWO——但注意 NFS PV 是否声明了 RWO？实际中 Kubernetes 会检查 PV 的 accessModes 是否包含 PVC 所需的模式，此处 nfs-model-pv 只声明了 ROX+RWX，不包含 RWO，无法绑定）。'
+  },
+  'pv2-pvc2': {
+    match: true,
+    msg: '✓ 匹配成功！nfs-model-pv 提供 200Gi，满足 llm-weights-pvc 申请的 150Gi；访问模式 ROX 完全匹配。这是 AI 推理场景的标准配置：NFS 存储 + ReadOnlyMany 访问模式，支持多个推理 Pod 同时挂载模型权重。'
+  },
+  'pv2-pvc3': {
+    match: false,
+    msg: '✗ 不匹配：postgres-pvc 已是 Bound 状态（绑定到 postgres-pv），不需要再匹配其他 PV。'
+  },
+  'pv3-pvc1': {
+    match: false,
+    msg: '✗ 不匹配：postgres-pv 已是 Bound 状态（已被 postgres-pvc 使用），一个 PV 同时只能绑定一个 PVC，无法再绑定 mongodb-pvc。'
+  },
+  'pv3-pvc2': {
+    match: false,
+    msg: '✗ 不匹配：postgres-pv 容量 50Gi < llm-weights-pvc 申请的 150Gi，容量不足；且 postgres-pv 已是 Bound 状态。'
+  },
+  'pv3-pvc3': {
+    match: true,
+    msg: '✓ 已绑定！postgres-pv 与 postgres-pvc 已经绑定（两者都显示 Bound 状态）。这是示例中已完成绑定的 PV/PVC 对，容量（50Gi > 30Gi）和访问模式（RWO）均满足。'
+  }
+};
+
+let selectedPv = null;
+let selectedPvc = null;
+let currentStep = 0;
+const totalSteps = 6;
+let selectedAccess = null;
+let selectedLayerId = null;
+
+// =====================
+// ALL FUNCTIONS
+// =====================
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const names = ['layers', 'binding', 'dynamic', 'access'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+}
+
+function selectLayer(id) {
+  if (selectedLayerId === id) {
+    document.getElementById(id).classList.remove('selected');
+    selectedLayerId = null;
+  } else {
+    if (selectedLayerId) document.getElementById(selectedLayerId).classList.remove('selected');
+    document.getElementById(id).classList.add('selected');
+    selectedLayerId = id;
+  }
+}
+
+function selectCard(type, id) {
+  if (type === 'pv') {
+    document.querySelectorAll('.pv-card').forEach(c => c.style.outline = '');
+    if (selectedPv === id) { selectedPv = null; }
+    else {
+      selectedPv = id;
+      document.getElementById(id).style.outline = '2px solid var(--mauve)';
+    }
+  } else {
+    document.querySelectorAll('.pvc-card').forEach(c => c.style.outline = '');
+    if (selectedPvc === id) { selectedPvc = null; }
+    else {
+      selectedPvc = id;
+      document.getElementById(id).style.outline = '2px solid var(--mauve)';
+    }
+  }
+  updateBindingResult();
+}
+
+function updateBindingResult() {
+  const el = document.getElementById('binding-result');
+  if (!selectedPv || !selectedPvc) {
+    el.className = 'binding-info';
+    el.textContent = '选择一个 PV 和一个 PVC，查看绑定匹配分析';
+    return;
+  }
+  const key = selectedPv + '-' + selectedPvc;
+  const rule = bindingRules[key];
+  if (!rule) {
+    el.className = 'binding-info';
+    el.textContent = '分析中...';
+    return;
+  }
+  el.className = 'binding-info ' + (rule.match ? 'match' : 'mismatch');
+  el.textContent = rule.msg;
+}
+
+function stepNext() {
+  if (currentStep < totalSteps) {
+    const prev = currentStep;
+    currentStep++;
+    if (prev > 0) {
+      document.getElementById('step-' + prev).classList.remove('active-step');
+      document.getElementById('step-' + prev).classList.add('done-step');
+    }
+    document.getElementById('step-' + currentStep).classList.add('active-step');
+    updateStepUI();
+  }
+}
+
+function stepPrev() {
+  if (currentStep > 0) {
+    document.getElementById('step-' + currentStep).classList.remove('active-step');
+    document.getElementById('step-' + currentStep).classList.remove('done-step');
+    currentStep--;
+    if (currentStep > 0) {
+      document.getElementById('step-' + currentStep).classList.remove('done-step');
+      document.getElementById('step-' + currentStep).classList.add('active-step');
+    }
+    updateStepUI();
+  }
+}
+
+function resetSteps() {
+  currentStep = 0;
+  for (let i = 1; i <= totalSteps; i++) {
+    document.getElementById('step-' + i).classList.remove('active-step', 'done-step');
+  }
+  updateStepUI();
+}
+
+function updateStepUI() {
+  document.getElementById('step-counter').textContent = '第 ' + currentStep + ' / ' + totalSteps + ' 步';
+  document.getElementById('btn-prev').disabled = currentStep <= 0;
+  document.getElementById('btn-next').disabled = currentStep >= totalSteps;
+}
+
+function selectAccess(mode) {
+  document.querySelectorAll('.access-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('ac-' + mode).classList.add('selected');
+  const data = accessData[mode];
+  const det = document.getElementById('access-detail');
+  det.innerHTML = `
+    <div style="font-weight:700;color:${data.color};margin-bottom:8px;">${data.title}</div>
+    <div style="margin-bottom:8px;">${data.desc}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+      <div style="background:var(--overlay);border-radius:6px;padding:8px;">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">典型使用场景</div>
+        <div style="font-size:12px;">${data.usecases}</div>
+      </div>
+      <div style="background:var(--overlay);border-radius:6px;padding:8px;">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">支持的存储类型</div>
+        <div style="font-size:12px;">${data.storage}</div>
+      </div>
+    </div>
+    <div style="background:rgba(166,227,161,0.08);border:1px solid rgba(166,227,161,0.2);border-radius:6px;padding:8px;margin-top:8px;">
+      <div style="font-size:10px;color:var(--green);margin-bottom:3px;font-weight:600;">AI 场景</div>
+      <div style="font-size:12px;">${data.ai}</div>
+    </div>
+  `;
+}
+
+// =====================
+// INIT LAST
+// =====================
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  updateStepUI();
+}
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>
