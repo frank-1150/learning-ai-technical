@@ -60,6 +60,12 @@ function nav(): DefaultTheme.NavItem[] {
         { text: "Let's Build GPT (Karpathy)", link: '/zh/machine-learning/build-gpt-karpathy/' },
         { text: '推理优化与硬件', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' }
       ]
+    },
+    {
+      text: '技术书籍阅读',
+      items: [
+        { text: 'Designing Distributed Systems', link: '/zh/book-notes/designing-distributed-systems/' }
+      ]
     }
   ]
 }
@@ -125,6 +131,26 @@ function sidebar(): DefaultTheme.Sidebar {
                   { text: '2026-03', link: '/zh/ai-applications/industry-views/facts/2026-03' }
                 ]
               }
+            ]
+          }
+        ]
+      }
+    ],
+    '/zh/book-notes/': [
+      {
+        text: '技术书籍阅读',
+        items: [
+          { text: '概览', link: '/zh/book-notes/' },
+          {
+            text: 'Designing Distributed Systems',
+            collapsed: false,
+            items: [
+              { text: '书籍总览', link: '/zh/book-notes/designing-distributed-systems/' },
+              { text: 'Part I — 基础概念', link: '/zh/book-notes/designing-distributed-systems/foundational-concepts' },
+              { text: 'Part II — 单节点模式', link: '/zh/book-notes/designing-distributed-systems/single-node-patterns' },
+              { text: 'Part III — 服务模式', link: '/zh/book-notes/designing-distributed-systems/serving-patterns' },
+              { text: 'Part IV — 批处理模式', link: '/zh/book-notes/designing-distributed-systems/batch-computational-patterns' },
+              { text: 'Part V — 通用概念', link: '/zh/book-notes/designing-distributed-systems/universal-concepts' }
             ]
           }
         ]

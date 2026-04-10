@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scatter/Gather Pattern</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086;
+    --surface: #181825; --border: #45475a; --overlay: #313244;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1;
+    --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+    --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b;
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  h2 { text-align: center; font-size: 15px; margin-bottom: 6px; }
+  .sub { text-align: center; font-size: 11px; color: var(--muted); margin-bottom: 16px; }
+  .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 18px; align-items: center; }
+  .controls label { font-size: 12px; color: var(--muted); }
+  .controls select, .controls button {
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface); color: var(--fg); font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .controls button { background: var(--blue); color: #1e1e2e; font-weight: bold; border: none; }
+  .controls button:hover { opacity: 0.85; }
+  .canvas-wrap { display: flex; justify-content: center; }
+  canvas { border-radius: 10px; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+  .stat-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+  .stat-value { font-size: 15px; font-weight: bold; }
+  .insight { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 12px; line-height: 1.6; text-align: center; background: var(--overlay); border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Scatter/Gather Pattern</h2>
+  <div class="sub">Watch how a request is scattered to N workers and gathered back</div>
+  <div class="controls">
+    <label>Leaf nodes:</label>
+    <select id="leafCount" onchange="resetAnim()">
+      <option value="3">3</option>
+      <option value="5" selected>5</option>
+      <option value="8">8</option>
+      <option value="12">12</option>
+    </select>
+    <button onclick="startAnim()">Run</button>
+  </div>
+  <div class="canvas-wrap">
+    <canvas id="cv" width="760" height="320"></canvas>
+  </div>
+  <div class="stats-row" id="stats">
+    <div class="stat-card"><div class="stat-label">Leaf Count</div><div class="stat-value" id="s-leaves" style="color:var(--blue)">5</div></div>
+    <div class="stat-card"><div class="stat-label">Slowest Leaf</div><div class="stat-value" id="s-slow" style="color:var(--red)">--</div></div>
+    <div class="stat-card"><div class="stat-label">Total Latency</div><div class="stat-value" id="s-total" style="color:var(--yellow)">--</div></div>
+    <div class="stat-card"><div class="stat-label">P(straggler)</div><div class="stat-value" id="s-prob" style="color:var(--mauve)">--</div></div>
+  </div>
+  <div class="insight" id="insight">Click <b>Run</b> to scatter a request to the leaf nodes and observe tail latency.</div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+let leafCount = 5;
+let leaves = [];
+let phase = 'idle';
+let animFrame = null;
+let scatterProgress = 0;
+let gatherProgress = 0;
+let leafDone = [];
+
+function getColor(name) {
+  const s = getComputedStyle(document.body);
+  const map = { bg:'--bg', fg:'--fg', muted:'--muted', surface:'--surface', border:'--border',
+    green:'--green', red:'--red', blue:'--blue', yellow:'--yellow', mauve:'--mauve', peach:'--peach', overlay:'--overlay' };
+  return s.getPropertyValue(map[name] || name).trim();
+}
+
+function generateLeaves(n) {
+  const arr = [];
+  for (let i = 0; i < n; i++) {
+    const latency = 20 + Math.random() * 70;
+    const isSlow = Math.random() < 0.15;
+    arr.push({ latency: isSlow ? latency + 60 + Math.random()*40 : latency, done: false, result: [] });
+  }
+  return arr;
+}
+
+function resetAnim() {
+  leafCount = parseInt(document.getElementById('leafCount').value);
+  document.getElementById('s-leaves').textContent = leafCount;
+  document.getElementById('s-slow').textContent = '--';
+  document.getElementById('s-total').textContent = '--';
+  document.getElementById('s-prob').textContent = '--';
+  document.getElementById('insight').innerHTML = 'Click <b>Run</b> to scatter a request to the leaf nodes and observe tail latency.';
+  phase = 'idle';
+  leaves = [];
+  if (animFrame) cancelAnimationFrame(animFrame);
+  drawIdle();
+}
+
+function startAnim() {
+  leafCount = parseInt(document.getElementById('leafCount').value);
+  leaves = generateLeaves(leafCount);
+  phase = 'scatter';
+  scatterProgress = 0;
+  gatherProgress = 0;
+  leafDone = new Array(leafCount).fill(false);
+  document.getElementById('s-leaves').textContent = leafCount;
+
+  const p99prob = (1 - Math.pow(0.99, leafCount)) * 100;
+  document.getElementById('s-prob').textContent = p99prob.toFixed(1) + '%';
+
+  if (animFrame) cancelAnimationFrame(animFrame);
+  animate();
+}
+
+function getRootPos() { return { x: cv.width / 2, y: 50 }; }
+function getLeafPos(i) {
+  const margin = 50;
+  const spacing = (cv.width - 2 * margin) / (leafCount - 1 || 1);
+  return { x: margin + i * spacing, y: 240 };
+}
+
+function drawNode(x, y, label, color, highlight) {
+  ctx.beginPath();
+  ctx.roundRect(x - 40, y - 18, 80, 36, 8);
+  ctx.fillStyle = highlight ? color : getColor('surface');
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = highlight ? getColor('bg') : color;
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, y);
+}
+
+function drawLine(x1, y1, x2, y2, color, progress) {
+  ctx.beginPath();
+  const dx = x2 - x1, dy = y2 - y1;
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 + dx * progress, y1 + dy * progress);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function drawBar(x, y, w, h, pct, color, slow) {
+  ctx.fillStyle = getColor('overlay');
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 3); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.roundRect(x, y, w * Math.min(pct, 1), h, 3); ctx.fill();
+  if (slow) {
+    ctx.fillStyle = getColor('red');
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('slow!', x + w/2, y - 4);
+  }
+}
+
+function drawIdle() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const root = getRootPos();
+  drawNode(root.x, root.y, 'Root', getColor('blue'), false);
+  for (let i = 0; i < leafCount; i++) {
+    const lp = getLeafPos(i);
+    drawLine(root.x, root.y + 18, lp.x, lp.y - 18, getColor('border'), 1);
+    drawNode(lp.x, lp.y, 'Leaf ' + (i+1), getColor('muted'), false);
+  }
+}
+
+let startTime = 0;
+let maxLatency = 0;
+let slowestIdx = 0;
+
+function animate() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const root = getRootPos();
+
+  if (phase === 'scatter') {
+    scatterProgress += 0.03;
+    drawNode(root.x, root.y, 'Root', getColor('blue'), true);
+    for (let i = 0; i < leafCount; i++) {
+      const lp = getLeafPos(i);
+      drawLine(root.x, root.y + 18, lp.x, lp.y - 18, getColor('green'), Math.min(scatterProgress, 1));
+      drawNode(lp.x, lp.y, 'Leaf ' + (i+1), getColor('muted'), false);
+    }
+    if (scatterProgress >= 1) {
+      phase = 'processing';
+      startTime = performance.now();
+      maxLatency = Math.max(...leaves.map(l => l.latency));
+      slowestIdx = leaves.indexOf(leaves.find(l => l.latency === maxLatency));
+    }
+  } else if (phase === 'processing') {
+    const elapsed = (performance.now() - startTime) / 20;
+    drawNode(root.x, root.y, 'Root', getColor('blue'), false);
+    let allDone = true;
+    for (let i = 0; i < leafCount; i++) {
+      const lp = getLeafPos(i);
+      const pct = elapsed / leaves[i].latency;
+      const done = pct >= 1;
+      leafDone[i] = done;
+      if (!done) allDone = false;
+      const isSlow = leaves[i].latency === maxLatency;
+      drawLine(root.x, root.y + 18, lp.x, lp.y - 18, done ? getColor('green') : getColor('border'), 1);
+      drawNode(lp.x, lp.y, 'Leaf ' + (i+1), done ? getColor('green') : (isSlow ? getColor('red') : getColor('yellow')), done);
+      drawBar(lp.x - 35, lp.y + 24, 70, 8, pct, isSlow ? getColor('red') : getColor('green'), isSlow && !done);
+    }
+    if (allDone) {
+      phase = 'gather';
+      gatherProgress = 0;
+    }
+  } else if (phase === 'gather') {
+    gatherProgress += 0.04;
+    for (let i = 0; i < leafCount; i++) {
+      const lp = getLeafPos(i);
+      drawLine(lp.x, lp.y - 18, root.x, root.y + 18, getColor('yellow'), Math.min(gatherProgress, 1));
+      drawNode(lp.x, lp.y, 'Leaf ' + (i+1), getColor('green'), true);
+      drawBar(lp.x - 35, lp.y + 24, 70, 8, 1, leaves[i].latency === maxLatency ? getColor('red') : getColor('green'), false);
+    }
+    drawNode(root.x, root.y, 'Root', getColor('yellow'), gatherProgress >= 1);
+    if (gatherProgress >= 1) {
+      phase = 'done';
+      document.getElementById('s-slow').textContent = maxLatency.toFixed(0) + 'ms';
+      document.getElementById('s-total').textContent = maxLatency.toFixed(0) + 'ms';
+      const avgLat = leaves.reduce((s,l) => s + l.latency, 0) / leafCount;
+      document.getElementById('insight').innerHTML =
+        `Average leaf latency: <b>${avgLat.toFixed(0)}ms</b>, but total = slowest leaf = <b style="color:var(--red)">${maxLatency.toFixed(0)}ms</b>. ` +
+        `With ${leafCount} leaves, the straggler determines your response time.`;
+    }
+  } else if (phase === 'done') {
+    drawNode(root.x, root.y, 'Root', getColor('yellow'), true);
+    for (let i = 0; i < leafCount; i++) {
+      const lp = getLeafPos(i);
+      const isSlow = leaves[i].latency === maxLatency;
+      drawLine(lp.x, lp.y - 18, root.x, root.y + 18, getColor('yellow'), 1);
+      drawNode(lp.x, lp.y, 'Leaf ' + (i+1), isSlow ? getColor('red') : getColor('green'), true);
+      drawBar(lp.x - 35, lp.y + 24, 70, 8, 1, isSlow ? getColor('red') : getColor('green'), false);
+    }
+    return;
+  }
+
+  animFrame = requestAnimationFrame(animate);
+}
+
+function render() {
+  if (phase === 'idle') drawIdle();
+}
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    const isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>

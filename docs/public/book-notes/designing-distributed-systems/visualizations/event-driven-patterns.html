@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Event-Driven Processing Patterns</title>
+<style>
+:root {
+  --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086;
+  --surface: #181825; --border: #45475a; --overlay: #313244;
+  --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387;
+}
+.light {
+  --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1;
+  --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+  --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  padding: 16px; overflow-x: hidden;
+}
+h3 { font-size: 14px; color: var(--muted); margin-bottom: 12px; text-align: center; font-weight: 500; }
+.tabs {
+  display: flex; justify-content: center; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.tabs button {
+  background: var(--overlay); color: var(--fg); border: 1px solid var(--border);
+  padding: 5px 12px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 11px;
+  transition: all 0.2s;
+}
+.tabs button:hover { background: var(--border); }
+.tabs button.active { background: var(--mauve); color: var(--surface); border-color: var(--mauve); }
+.diagram { display: flex; justify-content: center; }
+canvas { border-radius: 8px; }
+.desc {
+  max-width: 680px; margin: 14px auto 0; padding: 12px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  font-size: 12px; line-height: 1.7; color: var(--muted);
+}
+.desc b { color: var(--fg); }
+</style>
+</head>
+<body>
+<h3>Event-Driven Processing Patterns: Composable Building Blocks</h3>
+<div class="tabs">
+  <button class="active" data-p="copier">Copier</button>
+  <button data-p="filter">Filter</button>
+  <button data-p="splitter">Splitter</button>
+  <button data-p="sharder">Sharder</button>
+  <button data-p="merger">Merger</button>
+  <button data-p="pipeline">Pipeline</button>
+</div>
+<div class="diagram"><canvas id="c" width="680" height="400"></canvas></div>
+<div class="desc" id="desc"></div>
+
+<script>
+// 1. All const/let declarations and function definitions first
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const dpr = window.devicePixelRatio || 1;
+const descEl = document.getElementById('desc');
+
+let currentPattern = 'copier';
+let animTime = 0;
+let particles = [];
+let lastFrame = 0;
+
+function initCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+}
+
+function getStyle() {
+  const s = getComputedStyle(document.body);
+  return {
+    bg: s.getPropertyValue('--bg').trim(),
+    fg: s.getPropertyValue('--fg').trim(),
+    muted: s.getPropertyValue('--muted').trim(),
+    surface: s.getPropertyValue('--surface').trim(),
+    border: s.getPropertyValue('--border').trim(),
+    overlay: s.getPropertyValue('--overlay').trim(),
+    green: s.getPropertyValue('--green').trim(),
+    red: s.getPropertyValue('--red').trim(),
+    blue: s.getPropertyValue('--blue').trim(),
+    yellow: s.getPropertyValue('--yellow').trim(),
+    mauve: s.getPropertyValue('--mauve').trim(),
+    peach: s.getPropertyValue('--peach').trim(),
+  };
+}
+
+function drawRoundRect(x, y, w, h, r, fill, stroke) {
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fill();
+  ctx.stroke();
+}
+
+function drawBox(x, y, w, h, label, color, st) {
+  drawRoundRect(x, y, w, h, 6, st.overlay, color);
+  ctx.fillStyle = color;
+  ctx.font = 'bold 12px SF Mono, Fira Code, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y + h / 2);
+}
+
+function drawQueue(x, y, count, color, st, label) {
+  for (let i = 0; i < count; i++) {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.5 + 0.5 * ((count - i) / count);
+    ctx.beginPath();
+    ctx.roundRect(x, y + i * 22, 30, 18, 3);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  if (label) {
+    ctx.fillStyle = st.muted;
+    ctx.font = '10px SF Mono, Fira Code, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x + 15, y + count * 22 + 14);
+  }
+}
+
+function drawArrowLine(x1, y1, x2, y2, st, dashed) {
+  ctx.strokeStyle = st.border;
+  ctx.lineWidth = 1.5;
+  if (dashed) ctx.setLineDash([4, 4]); else ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  ctx.fillStyle = st.border;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - 7 * Math.cos(angle - 0.4), y2 - 7 * Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - 7 * Math.cos(angle + 0.4), y2 - 7 * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawParticle(x, y, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.3;
+  ctx.beginPath();
+  ctx.arc(x, y, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function lerp(a, b, t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
+
+const patterns = {
+  copier: {
+    desc: '<b>Copier</b> -- 将一个输入流复制到多个相同的输出流。典型场景：视频转码时同一原始文件需要同时生成 4K、1080p、移动端三种格式。还可以用于双路冗余处理以对冲尾延迟。',
+    draw(st, t) {
+      const cx = 340, topY = 40;
+      drawQueue(cx - 15, topY, 3, st.yellow, st, 'Input');
+      drawBox(cx - 45, 130, 90, 40, 'Copier', st.mauve, st);
+      drawArrowLine(cx, topY + 66, cx, 130, st, true);
+      drawQueue(cx - 120, 230, 3, st.blue, st, 'Output A');
+      drawQueue(cx - 15, 230, 3, st.blue, st, 'Output B');
+      drawQueue(cx + 90, 230, 3, st.blue, st, 'Output C');
+      drawArrowLine(cx, 170, cx - 105, 230, st, true);
+      drawArrowLine(cx, 170, cx, 230, st, true);
+      drawArrowLine(cx, 170, cx + 105, 230, st, true);
+      // Animated particles
+      const p = (t % 2) / 2;
+      if (p < 0.4) {
+        const pp = p / 0.4;
+        drawParticle(cx, lerp(topY + 66, 130, pp), st.yellow);
+      } else {
+        const pp = (p - 0.4) / 0.6;
+        drawParticle(lerp(cx, cx - 105, pp), lerp(170, 230, pp), st.blue);
+        drawParticle(lerp(cx, cx, pp), lerp(170, 230, pp), st.blue);
+        drawParticle(lerp(cx, cx + 105, pp), lerp(170, 230, pp), st.blue);
+      }
+    }
+  },
+  filter: {
+    desc: '<b>Filter</b> -- 按条件丢弃不符合要求的工作项。输出是输入的子集。典型场景：新用户注册流程中过滤未勾选"接收通知"的用户。Filter 作为 Ambassador 包裹 Source Container。',
+    draw(st, t) {
+      const cx = 340, topY = 40;
+      // Input queue with mixed items
+      for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = i % 2 === 0 ? st.green : st.red;
+        ctx.globalAlpha = 0.6 + 0.4 * ((4 - i) / 4);
+        ctx.beginPath(); ctx.roundRect(cx - 15, topY + i * 22, 30, 18, 3); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = st.fg;
+        ctx.font = '9px SF Mono, Fira Code, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(i % 2 === 0 ? 'OK' : 'X', cx, topY + i * 22 + 10);
+      }
+      ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+      ctx.fillText('Mixed Input', cx, topY + 4 * 22 + 14);
+
+      drawBox(cx - 45, 160, 90, 40, 'Filter', st.red, st);
+      drawArrowLine(cx, topY + 88, cx, 160, st, true);
+
+      // Output: only green items
+      for (let i = 0; i < 2; i++) {
+        ctx.fillStyle = st.green;
+        ctx.globalAlpha = 0.6 + 0.4 * ((2 - i) / 2);
+        ctx.beginPath(); ctx.roundRect(cx - 15, 260 + i * 22, 30, 18, 3); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = st.fg; ctx.font = '9px SF Mono, Fira Code, monospace';
+        ctx.fillText('OK', cx, 260 + i * 22 + 10);
+      }
+      ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+      ctx.fillText('Filtered Output', cx, 260 + 2 * 22 + 14);
+      drawArrowLine(cx, 200, cx, 260, st, true);
+
+      // Rejected items fall to the side
+      ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+      ctx.fillText('Dropped', cx + 120, 190);
+      const p = (t % 1.5) / 1.5;
+      if (p > 0.5) {
+        const pp = (p - 0.5) / 0.5;
+        ctx.globalAlpha = 1 - pp;
+        drawParticle(lerp(cx + 45, cx + 100, pp), lerp(180, 200, pp), st.red);
+        ctx.globalAlpha = 1;
+      }
+      drawParticle(cx, lerp(topY + 88, 160, (t % 1.5) / 1.5), st.yellow);
+    }
+  },
+  splitter: {
+    desc: '<b>Splitter</b> -- 按条件将输入路由到不同的输出队列，不丢弃任何工作项。典型场景：物流通知根据用户偏好分流到短信队列或邮件队列。可以看作 Copier + Filters 的紧凑表达。',
+    draw(st, t) {
+      const cx = 340, topY = 40;
+      // Mixed input
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = i % 2 === 0 ? st.peach : st.blue;
+        ctx.beginPath(); ctx.roundRect(cx - 15, topY + i * 22, 30, 18, 3); ctx.fill();
+        ctx.fillStyle = st.fg; ctx.font = '9px SF Mono, Fira Code, monospace'; ctx.textAlign = 'center';
+        ctx.fillText(i % 2 === 0 ? 'SMS' : 'Mail', cx, topY + i * 22 + 10);
+      }
+      ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+      ctx.fillText('All Notifications', cx, topY + 3 * 22 + 14);
+
+      drawBox(cx - 50, 150, 100, 40, 'Splitter', st.yellow, st);
+      drawArrowLine(cx, topY + 66, cx, 150, st, true);
+
+      // Left output: SMS
+      for (let i = 0; i < 2; i++) {
+        ctx.fillStyle = st.peach;
+        ctx.beginPath(); ctx.roundRect(cx - 120, 250 + i * 22, 30, 18, 3); ctx.fill();
+        ctx.fillStyle = st.fg; ctx.font = '9px SF Mono, Fira Code, monospace';
+        ctx.fillText('SMS', cx - 105, 250 + i * 22 + 10);
+      }
+      ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+      ctx.fillText('SMS Queue', cx - 105, 250 + 2 * 22 + 14);
+
+      // Right output: Email
+      for (let i = 0; i < 1; i++) {
+        ctx.fillStyle = st.blue;
+        ctx.beginPath(); ctx.roundRect(cx + 90, 250 + i * 22, 30, 18, 3); ctx.fill();
+        ctx.fillStyle = st.fg; ctx.font = '9px SF Mono, Fira Code, monospace';
+        ctx.fillText('Mail', cx + 105, 250 + i * 22 + 10);
+      }
+      ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+      ctx.fillText('Email Queue', cx + 105, 250 + 1 * 22 + 14);
+
+      drawArrowLine(cx, 190, cx - 105, 250, st, true);
+      drawArrowLine(cx, 190, cx + 105, 250, st, true);
+
+      const p = (t % 2) / 2;
+      if (p < 0.4) {
+        drawParticle(cx, lerp(topY + 66, 150, p / 0.4), st.yellow);
+      } else {
+        const pp = (p - 0.4) / 0.6;
+        const goLeft = Math.floor(t / 2) % 2 === 0;
+        if (goLeft) drawParticle(lerp(cx, cx - 105, pp), lerp(190, 250, pp), st.peach);
+        else drawParticle(lerp(cx, cx + 105, pp), lerp(190, 250, pp), st.blue);
+      }
+    }
+  },
+  sharder: {
+    desc: '<b>Sharder</b> -- 基于分片函数将输入均匀分配到 N 个队列。提供故障隔离（坏的 Worker 镜像只影响部分分片）和负载分散（跨数据中心分布）。当某分片不可用时，动态将流量导向健康分片。',
+    draw(st, t) {
+      const cx = 340, topY = 30;
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = st.yellow;
+        ctx.beginPath(); ctx.roundRect(cx - 15, topY + i * 22, 30, 18, 3); ctx.fill();
+        ctx.fillStyle = st.fg; ctx.font = '9px SF Mono, Fira Code, monospace'; ctx.textAlign = 'center';
+        ctx.fillText(String(i * 21 + 1).padStart(3, '0'), cx, topY + i * 22 + 10);
+      }
+      ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+      ctx.fillText('All Items', cx, topY + 3 * 22 + 14);
+
+      drawBox(cx - 50, 135, 100, 40, 'Sharder', st.green, st);
+      ctx.fillStyle = st.muted; ctx.font = '9px SF Mono, Fira Code, monospace';
+      ctx.fillText('hash(id) % N', cx, 135 + 52);
+      drawArrowLine(cx, topY + 66, cx, 135, st, true);
+
+      const shards = [
+        { x: cx - 160, label: 'Shard #0', sub: 'id % 3 == 0' },
+        { x: cx - 15, label: 'Shard #1', sub: 'id % 3 == 1' },
+        { x: cx + 130, label: 'Shard #2', sub: 'id % 3 == 2' },
+      ];
+      shards.forEach((sh, si) => {
+        for (let i = 0; i < 2; i++) {
+          ctx.fillStyle = st.blue;
+          ctx.globalAlpha = 0.6 + 0.4 * ((2 - i) / 2);
+          ctx.beginPath(); ctx.roundRect(sh.x, 240 + i * 22, 30, 18, 3); ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+        ctx.fillText(sh.label, sh.x + 15, 240 + 2 * 22 + 14);
+        ctx.font = '9px SF Mono, Fira Code, monospace';
+        ctx.fillText(sh.sub, sh.x + 15, 240 + 2 * 22 + 26);
+        drawArrowLine(cx, 175, sh.x + 15, 240, st, true);
+      });
+
+      const p = (t % 1.8) / 1.8;
+      const targetShard = Math.floor(t / 1.8) % 3;
+      if (p < 0.4) {
+        drawParticle(cx, lerp(topY + 66, 135, p / 0.4), st.yellow);
+      } else {
+        const pp = (p - 0.4) / 0.6;
+        drawParticle(lerp(cx, shards[targetShard].x + 15, pp), lerp(175, 240, pp), st.green);
+      }
+    }
+  },
+  merger: {
+    desc: '<b>Merger</b> -- Copier 的反向操作，将多个独立的输入队列合并为一个输出队列。典型场景：多个代码仓库同时触发构建请求，Merger 将它们合并到统一的构建系统队列。',
+    draw(st, t) {
+      const cx = 340, topY = 30;
+      const sources = [
+        { x: cx - 140, color: st.peach, label: 'Queue #1' },
+        { x: cx - 15, color: st.blue, label: 'Queue #2' },
+        { x: cx + 110, color: st.green, label: 'Queue #3' },
+      ];
+      sources.forEach(src => {
+        for (let i = 0; i < 2; i++) {
+          ctx.fillStyle = src.color;
+          ctx.globalAlpha = 0.6 + 0.4 * ((2 - i) / 2);
+          ctx.beginPath(); ctx.roundRect(src.x, topY + i * 22, 30, 18, 3); ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace'; ctx.textAlign = 'center';
+        ctx.fillText(src.label, src.x + 15, topY + 2 * 22 + 14);
+      });
+
+      drawBox(cx - 50, 150, 100, 40, 'Merger', st.peach, st);
+      sources.forEach(src => {
+        drawArrowLine(src.x + 15, topY + 44 + 14, cx, 150, st, true);
+      });
+
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = st.yellow;
+        ctx.globalAlpha = 0.5 + 0.5 * ((3 - i) / 3);
+        ctx.beginPath(); ctx.roundRect(cx - 15, 250 + i * 22, 30, 18, 3); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.fillStyle = st.muted; ctx.font = '10px SF Mono, Fira Code, monospace';
+      ctx.fillText('Merged Output', cx, 250 + 3 * 22 + 14);
+      drawArrowLine(cx, 190, cx, 250, st, true);
+
+      const p = (t % 2) / 2;
+      const srcIdx = Math.floor(t / 2) % 3;
+      if (p < 0.5) {
+        const pp = p / 0.5;
+        drawParticle(lerp(sources[srcIdx].x + 15, cx, pp), lerp(topY + 58, 150, pp), sources[srcIdx].color);
+      } else {
+        const pp = (p - 0.5) / 0.5;
+        drawParticle(cx, lerp(190, 250, pp), st.yellow);
+      }
+    }
+  },
+  pipeline: {
+    desc: '<b>Pipeline</b> -- 组合多种模式构建完整的工作流。此示例展示用户注册流程：新用户经 Sharder 分片发送验证邮件，确认后经 Copier 复制到欢迎邮件和通知设置两条路径，通知设置再经 Filter 分流到邮件/短信通知队列。',
+    draw(st, t) {
+      const cx = 340, topY = 15;
+      // Input
+      drawQueue(cx - 15, topY, 2, st.yellow, st, 'New Users');
+
+      // Sharder
+      drawBox(cx - 40, 75, 80, 30, 'Sharder', st.green, st);
+      drawArrowLine(cx, topY + 44, cx, 75, st, true);
+      drawQueue(cx - 100, 125, 2, st.blue, st, 'Verify #0');
+      drawQueue(cx + 70, 125, 2, st.blue, st, 'Verify #1');
+      drawArrowLine(cx, 105, cx - 85, 125, st, true);
+      drawArrowLine(cx, 105, cx + 85, 125, st, true);
+
+      // After verification -> Copier
+      ctx.fillStyle = st.muted; ctx.font = '9px SF Mono, Fira Code, monospace'; ctx.textAlign = 'center';
+      ctx.fillText('verified', cx, 195);
+      drawBox(cx - 40, 205, 80, 30, 'Copier', st.mauve, st);
+      drawArrowLine(cx, 170, cx, 205, st, true);
+
+      // Two branches
+      drawQueue(cx - 130, 265, 2, st.peach, st, 'Welcome Mail');
+      drawQueue(cx + 80, 265, 2, st.blue, st, 'Notifications');
+      drawArrowLine(cx, 235, cx - 115, 265, st, true);
+      drawArrowLine(cx, 235, cx + 95, 265, st, true);
+
+      // Filter on notifications
+      drawBox(cx + 55, 330, 80, 28, 'Filter', st.red, st);
+      drawArrowLine(cx + 95, 310, cx + 95, 330, st, true);
+      drawQueue(cx + 10, 378, 1, st.peach, st, 'Email');
+      drawQueue(cx + 140, 378, 1, st.green, st, 'SMS');
+      drawArrowLine(cx + 95, 358, cx + 25, 378, st, true);
+      drawArrowLine(cx + 95, 358, cx + 155, 378, st, true);
+
+      // Animate
+      const p = (t % 3) / 3;
+      if (p < 0.15) {
+        drawParticle(cx, lerp(topY + 44, 75, p / 0.15), st.yellow);
+      } else if (p < 0.3) {
+        const pp = (p - 0.15) / 0.15;
+        const goLeft = Math.floor(t / 3) % 2 === 0;
+        drawParticle(lerp(cx, goLeft ? cx - 85 : cx + 85, pp), lerp(105, 125, pp), st.green);
+      } else if (p < 0.5) {
+        drawParticle(cx, lerp(170, 205, (p - 0.3) / 0.2), st.blue);
+      } else if (p < 0.7) {
+        const pp = (p - 0.5) / 0.2;
+        drawParticle(lerp(cx, cx - 115, pp), lerp(235, 265, pp), st.mauve);
+        drawParticle(lerp(cx, cx + 95, pp), lerp(235, 265, pp), st.mauve);
+      } else if (p < 0.85) {
+        const pp = (p - 0.7) / 0.15;
+        drawParticle(cx + 95, lerp(310, 330, pp), st.blue);
+      } else {
+        const pp = (p - 0.85) / 0.15;
+        const goEmail = Math.floor(t / 3) % 2 === 0;
+        if (goEmail) drawParticle(lerp(cx + 95, cx + 25, pp), lerp(358, 378, pp), st.peach);
+        else drawParticle(lerp(cx + 95, cx + 155, pp), lerp(358, 378, pp), st.green);
+      }
+    }
+  }
+};
+
+function switchPattern(name) {
+  currentPattern = name;
+  document.querySelectorAll('.tabs button').forEach(b => {
+    b.classList.toggle('active', b.dataset.p === name);
+  });
+  descEl.innerHTML = patterns[name].desc;
+}
+
+function render() {
+  const st = getStyle();
+  ctx.clearRect(0, 0, 680, 400);
+  patterns[currentPattern].draw(st, animTime);
+}
+
+function loop(time) {
+  const dt = (time - lastFrame) / 1000;
+  lastFrame = time;
+  animTime += dt;
+  render();
+  requestAnimationFrame(loop);
+}
+
+function setupControls() {
+  document.querySelectorAll('.tabs button').forEach(btn => {
+    btn.addEventListener('click', () => switchPattern(btn.dataset.p));
+  });
+}
+
+// 2. Theme sync and initial render LAST
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    const isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+
+initCanvas();
+setupControls();
+descEl.innerHTML = patterns.copier.desc;
+syncTheme();
+requestAnimationFrame(loop);
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>

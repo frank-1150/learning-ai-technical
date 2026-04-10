@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book Structure</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --dim: #7f849c;
+    --surface: #181825; --border: #45475a; --overlay: #313244;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af;
+    --mauve: #cba6f7; --peach: #fab387; --teal: #94e2d5;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --dim: #7c7f93;
+    --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+    --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d;
+    --mauve: #8839ef; --peach: #fe640b; --teal: #179299;
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  .book-title {
+    text-align: center; font-size: 15px; font-weight: 700;
+    margin-bottom: 20px; color: var(--fg);
+  }
+  .book-title span { color: var(--muted); font-weight: 400; font-size: 12px; display: block; margin-top: 4px; }
+  .parts-grid { display: flex; flex-direction: column; gap: 8px; }
+  .part-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; cursor: pointer; transition: all 0.3s;
+  }
+  .part-card:hover { border-color: var(--blue); }
+  .part-header {
+    display: flex; align-items: center; padding: 12px 16px; gap: 12px;
+    user-select: none;
+  }
+  .part-num {
+    width: 36px; height: 36px; border-radius: 8px; display: flex;
+    align-items: center; justify-content: center; font-size: 13px;
+    font-weight: 700; flex-shrink: 0;
+  }
+  .p1 .part-num { background: rgba(166,227,161,0.15); color: var(--green); }
+  .p2 .part-num { background: rgba(137,180,250,0.15); color: var(--blue); }
+  .p3 .part-num { background: rgba(203,166,247,0.15); color: var(--mauve); }
+  .p4 .part-num { background: rgba(250,179,135,0.15); color: var(--peach); }
+  .p5 .part-num { background: rgba(243,139,168,0.15); color: var(--red); }
+  .light .p1 .part-num { background: rgba(64,160,43,0.12); }
+  .light .p2 .part-num { background: rgba(30,102,245,0.12); }
+  .light .p3 .part-num { background: rgba(136,57,239,0.12); }
+  .light .p4 .part-num { background: rgba(254,100,11,0.12); }
+  .light .p5 .part-num { background: rgba(210,15,57,0.12); }
+  .part-info { flex: 1; min-width: 0; }
+  .part-name { font-size: 13px; font-weight: 600; }
+  .part-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .part-arrow {
+    font-size: 12px; color: var(--muted); transition: transform 0.3s; flex-shrink: 0;
+  }
+  .part-card.open .part-arrow { transform: rotate(90deg); }
+  .part-chapters {
+    max-height: 0; overflow: hidden; transition: max-height 0.4s ease;
+    border-top: 0 solid var(--border);
+  }
+  .part-card.open .part-chapters {
+    max-height: 500px; border-top-width: 1px;
+  }
+  .chapter-list { padding: 8px 16px 12px 64px; }
+  .chapter-item {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 4px 0; font-size: 12px;
+  }
+  .ch-num { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .ch-name { color: var(--fg); }
+  .ch-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+  .ch-tag {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    background: var(--overlay); color: var(--dim);
+  }
+  .stats-row {
+    display: flex; justify-content: center; gap: 24px;
+    margin-top: 16px; padding: 10px; font-size: 11px; color: var(--muted);
+  }
+  .stats-row strong { color: var(--fg); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="book-title">
+    Designing Distributed Systems
+    <span>Brendan Burns · O'Reilly · 2nd Edition · 2024</span>
+  </div>
+  <div class="parts-grid" id="parts"></div>
+  <div class="stats-row">
+    <span><strong>5</strong> Parts</span>
+    <span><strong>16</strong> Chapters</span>
+    <span><strong>220</strong> Pages</span>
+  </div>
+</div>
+
+<script>
+const parts = [
+  { num: 'I', cls: 'p1', name: '基础概念', nameEn: 'Foundational Concepts',
+    desc: '模式简史 + 分布式系统核心原语',
+    chapters: [
+      { n: '1', name: 'Introduction', tags: ['模式', '历史'] },
+      { n: '2', name: 'Important Distributed System Concepts', tags: ['API', '一致性', '幂等'] }
+    ]},
+  { num: 'II', cls: 'p2', name: '单节点模式', nameEn: 'Single-Node Patterns',
+    desc: 'Sidecar · Ambassador · Adapter',
+    chapters: [
+      { n: '3', name: 'The Sidecar Pattern', tags: ['HTTPS', 'PaaS', '模块化'] },
+      { n: '4', name: 'Ambassadors', tags: ['分片', '代理', 'A/B 实验'] },
+      { n: '5', name: 'Adapters', tags: ['监控', '日志', '健康检查'] }
+    ]},
+  { num: 'III', cls: 'p3', name: '服务模式', nameEn: 'Serving Patterns',
+    desc: '负载均衡 · 分片 · Scatter/Gather · FaaS · 选举',
+    chapters: [
+      { n: '6', name: 'Replicated Load-Balanced Services', tags: ['无状态', '缓存', 'SSL'] },
+      { n: '7', name: 'Sharded Services', tags: ['一致性哈希', '热分片'] },
+      { n: '8', name: 'Scatter/Gather', tags: ['并行查询', '尾延迟'] },
+      { n: '9', name: 'Functions and Event-Driven Processing', tags: ['FaaS', '流水线'] },
+      { n: '10', name: 'Ownership Election', tags: ['etcd', '锁', '租约'] }
+    ]},
+  { num: 'IV', cls: 'p4', name: '批处理计算模式', nameEn: 'Batch Computational Patterns',
+    desc: '工作队列 · 事件驱动 · 协调批处理',
+    chapters: [
+      { n: '11', name: 'Work Queue Systems', tags: ['动态扩缩', '多 Worker'] },
+      { n: '12', name: 'Event-Driven Batch Processing', tags: ['Kafka', 'Copier/Filter/Splitter'] },
+      { n: '13', name: 'Coordinated Batch Processing', tags: ['Join', 'Reduce', 'MapReduce'] }
+    ]},
+  { num: 'V', cls: 'p5', name: '通用概念', nameEn: 'Universal Concepts',
+    desc: '可观测性 · AI 推理 · 故障模式',
+    chapters: [
+      { n: '14', name: 'Monitoring and Observability Patterns', tags: ['日志', '指标', '追踪'] },
+      { n: '15', name: 'AI Inference and Serving', tags: ['模型部署', 'RAG'] },
+      { n: '16', name: 'Common Failure Patterns', tags: ['雷鸣群效应', '版本错误'] }
+    ]}
+];
+
+function render() {
+  const container = document.getElementById('parts');
+  container.innerHTML = parts.map((p, i) => `
+    <div class="part-card ${p.cls}" onclick="toggle(this)">
+      <div class="part-header">
+        <div class="part-num">${p.num}</div>
+        <div class="part-info">
+          <div class="part-name">${p.name} <span style="color:var(--muted);font-weight:400;font-size:11px">${p.nameEn}</span></div>
+          <div class="part-desc">${p.desc}</div>
+        </div>
+        <div class="part-arrow">▶</div>
+      </div>
+      <div class="part-chapters">
+        <div class="chapter-list">
+          ${p.chapters.map(c => `
+            <div class="chapter-item">
+              <span class="ch-num">Ch ${c.n}</span>
+              <div>
+                <span class="ch-name">${c.name}</span>
+                <div class="ch-tags">${c.tags.map(t => `<span class="ch-tag">${t}</span>`).join('')}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggle(el) {
+  el.classList.toggle('open');
+}
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    const isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>

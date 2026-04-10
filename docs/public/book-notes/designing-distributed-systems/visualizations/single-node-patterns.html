@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Single-Node Patterns</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --dim: #7f849c;
+    --surface: #181825; --border: #45475a; --overlay: #313244;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --dim: #7c7f93;
+    --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+    --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b;
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  .patterns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 600px) { .patterns { grid-template-columns: 1fr; } }
+  .pattern-card {
+    background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+    padding: 16px; cursor: pointer; transition: all 0.3s; text-align: center;
+  }
+  .pattern-card:hover { transform: translateY(-2px); }
+  .pattern-card.active { border-color: var(--blue); }
+  .p-icon { font-size: 28px; margin-bottom: 8px; }
+  .p-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .p-sub { font-size: 11px; color: var(--muted); }
+  .detail {
+    margin-top: 16px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px; display: none;
+  }
+  .detail.active { display: block; }
+  .detail-title { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+  .flow-diagram {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 16px; background: var(--overlay); border-radius: 8px; margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .box {
+    padding: 10px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+    text-align: center; white-space: nowrap;
+  }
+  .box-app { background: rgba(137,180,250,0.15); color: var(--blue); border: 1px solid rgba(137,180,250,0.3); }
+  .box-aux { border: 1px solid; padding: 10px 14px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .box-ext { background: rgba(108,112,134,0.15); color: var(--muted); border: 1px solid var(--border); }
+  .box-pod { border: 2px dashed var(--border); border-radius: 10px; padding: 12px; display: flex; align-items: center; gap: 8px; }
+  .pod-label { position: absolute; top: -10px; left: 12px; font-size: 10px; color: var(--muted); background: var(--overlay); padding: 0 6px; }
+  .arr { color: var(--muted); font-size: 16px; }
+  .examples { margin-top: 12px; }
+  .example-item {
+    display: flex; gap: 8px; align-items: baseline; padding: 6px 0;
+    border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .example-item:last-child { border-bottom: none; }
+  .ex-label { color: var(--muted); min-width: 70px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="patterns" id="cards"></div>
+  <div id="details"></div>
+</div>
+
+<script>
+const patterns = [
+  {
+    icon: '🏍️', name: 'Sidecar', sub: '扩展 · 增强',
+    color: '--green',
+    desc: '在主容器旁添加辅助容器，扩展或增强主容器的功能，无需修改主容器代码。',
+    flow: [
+      { type: 'ext', text: '外部请求' },
+      { type: 'arr' },
+      { type: 'pod', children: [
+        { type: 'aux', text: 'Sidecar', color: 'var(--green)' },
+        { type: 'arr', text: '↔' },
+        { type: 'app', text: 'App 容器' }
+      ]},
+    ],
+    direction: '外界 → Sidecar → App（增强输入处理）',
+    examples: [
+      { label: 'HTTPS 代理', desc: 'nginx sidecar 为遗留 HTTP 服务添加 SSL 终止' },
+      { label: '配置同步', desc: 'Sidecar 从云端拉取配置，写入共享卷' },
+      { label: 'Git 同步', desc: 'Sidecar 循环 git pull，实现简易 PaaS' },
+      { label: '进程监控', desc: 'topz sidecar 共享 PID 命名空间，暴露资源用量' },
+    ]
+  },
+  {
+    icon: '🏛️', name: 'Ambassador', sub: '代理 · 中介',
+    color: '--blue',
+    desc: '在主容器旁添加代理容器，简化主容器与外部服务之间的通信。主容器只需连接 localhost。',
+    flow: [
+      { type: 'pod', children: [
+        { type: 'app', text: 'App 容器' },
+        { type: 'arr', text: '→' },
+        { type: 'aux', text: 'Ambassador', color: 'var(--blue)' },
+      ]},
+      { type: 'arr' },
+      { type: 'ext', text: '外部服务集群' },
+    ],
+    direction: 'App → Ambassador → 外部服务（代理出站请求）',
+    examples: [
+      { label: '分片代理', desc: 'twemproxy 将请求路由到正确的 Redis 分片' },
+      { label: '服务发现', desc: 'Ambassador 探测环境，连接正确的数据库实例' },
+      { label: 'A/B 实验', desc: 'nginx 按权重将 10% 流量导向实验版本' },
+    ]
+  },
+  {
+    icon: '🔌', name: 'Adapter', sub: '标准化 · 适配',
+    color: '--peach',
+    desc: '在主容器旁添加适配容器，将主容器的异构接口转换为外部系统期望的统一格式。',
+    flow: [
+      { type: 'pod', children: [
+        { type: 'app', text: 'App 容器' },
+        { type: 'arr', text: '→' },
+        { type: 'aux', text: 'Adapter', color: 'var(--peach)' },
+      ]},
+      { type: 'arr' },
+      { type: 'ext', text: '监控/日志系统' },
+    ],
+    direction: 'App → Adapter → 外部消费者（标准化输出格式）',
+    examples: [
+      { label: 'Prometheus', desc: 'redis_exporter 将 Redis 指标转为 /metrics 格式' },
+      { label: '日志标准化', desc: 'fluentd adapter 统一不同应用的日志格式' },
+      { label: '健康检查', desc: 'Go adapter 对 MySQL 执行查询暴露 HTTP 健康端点' },
+    ]
+  }
+];
+
+let activeIdx = 0;
+
+function render() {
+  document.getElementById('cards').innerHTML = patterns.map((p, i) => `
+    <div class="pattern-card ${i === activeIdx ? 'active' : ''}" onclick="select(${i})"
+         style="${i === activeIdx ? 'border-color:' + p.color.replace('--','var(--') + ')' : ''}">
+      <div class="p-icon">${p.icon}</div>
+      <div class="p-name">${p.name}</div>
+      <div class="p-sub">${p.sub}</div>
+    </div>
+  `).join('');
+
+  document.getElementById('details').innerHTML = patterns.map((p, i) => `
+    <div class="detail ${i === activeIdx ? 'active' : ''}">
+      <div class="detail-title" style="color:var(${p.color})">${p.name} 模式</div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:12px">${p.desc}</div>
+      <div class="flow-diagram">
+        <div style="font-size:11px;color:var(--muted);width:100%;text-align:center;margin-bottom:4px">${p.direction}</div>
+      </div>
+      <div class="examples">
+        ${p.examples.map(e => `
+          <div class="example-item">
+            <span class="ex-label" style="color:var(${p.color})">${e.label}</span>
+            <span>${e.desc}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function select(i) { activeIdx = i; render(); }
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    const isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>

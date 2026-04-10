@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Replicated vs Sharded Services</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086;
+    --surface: #181825; --border: #45475a; --overlay: #313244;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1;
+    --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+    --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b;
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  h2 { text-align: center; font-size: 15px; margin-bottom: 16px; color: var(--fg); }
+  .mode-toggle { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
+  .mode-btn {
+    padding: 8px 24px; border: 2px solid var(--border); border-radius: 8px;
+    background: transparent; color: var(--fg); font-family: inherit;
+    font-size: 13px; cursor: pointer; transition: all 0.3s;
+  }
+  .mode-btn:hover { border-color: var(--blue); }
+  .mode-btn.active-replicated { border-color: var(--green); background: rgba(166,227,161,0.15); color: var(--green); }
+  .mode-btn.active-sharded { border-color: var(--mauve); background: rgba(203,166,247,0.15); color: var(--mauve); }
+  .diagram { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .requests-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .request-pill {
+    padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: bold;
+    transition: all 0.4s; opacity: 0;
+  }
+  .request-pill.show { opacity: 1; }
+  .lb-box {
+    background: var(--surface); border: 2px solid var(--blue); border-radius: 10px;
+    padding: 10px 28px; font-size: 13px; color: var(--blue); font-weight: bold;
+    position: relative;
+  }
+  .arrow { color: var(--muted); font-size: 18px; line-height: 1; }
+  .nodes-row { display: flex; gap: 16px; justify-content: center; }
+  .node-box {
+    width: 120px; padding: 12px 8px; border-radius: 10px; text-align: center;
+    border: 2px solid var(--border); background: var(--surface);
+    transition: all 0.4s; position: relative;
+  }
+  .node-label { font-size: 12px; font-weight: bold; margin-bottom: 6px; }
+  .node-data { font-size: 10px; color: var(--muted); line-height: 1.5; }
+  .node-data .item { padding: 2px 6px; border-radius: 4px; display: inline-block; margin: 1px; transition: all 0.3s; }
+  .node-box.active { border-color: var(--green); box-shadow: 0 0 12px rgba(166,227,161,0.3); }
+  .node-box.active-shard { border-color: var(--mauve); box-shadow: 0 0 12px rgba(203,166,247,0.3); }
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; margin-top: 8px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+  .stat-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+  .stat-value { font-size: 16px; font-weight: bold; }
+  .insight { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 12px; line-height: 1.6; text-align: center; background: var(--overlay); border: 1px solid var(--border); }
+  .color-a { color: var(--red); }
+  .color-b { color: var(--blue); }
+  .color-c { color: var(--green); }
+  .color-d { color: var(--yellow); }
+  .bg-a { background: rgba(243,139,168,0.2); }
+  .bg-b { background: rgba(137,180,250,0.2); }
+  .bg-c { background: rgba(166,227,161,0.2); }
+  .bg-d { background: rgba(249,226,175,0.2); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Replicated vs Sharded Services</h2>
+  <div class="mode-toggle">
+    <button class="mode-btn active-replicated" id="btn-rep" onclick="setMode('replicated')">Replicated</button>
+    <button class="mode-btn" id="btn-shard" onclick="setMode('sharded')">Sharded</button>
+  </div>
+  <div class="diagram">
+    <div class="requests-row" id="requests"></div>
+    <div class="arrow">|</div>
+    <div class="lb-box" id="lb-label">Load Balancer</div>
+    <div class="arrow" id="arrows-down"></div>
+    <div class="nodes-row" id="nodes"></div>
+  </div>
+  <div class="stats-row" id="stats"></div>
+  <div class="insight" id="insight"></div>
+</div>
+<script>
+const requests = [
+  { label: 'Req A', color: 'a' },
+  { label: 'Req B', color: 'b' },
+  { label: 'Req C', color: 'c' },
+  { label: 'Req D', color: 'd' },
+];
+
+const allData = ['A','B','C','D'];
+
+let mode = 'replicated';
+let animTimer = null;
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-rep').className = m === 'replicated' ? 'mode-btn active-replicated' : 'mode-btn';
+  document.getElementById('btn-shard').className = m === 'sharded' ? 'mode-btn active-sharded' : 'mode-btn';
+  document.getElementById('lb-label').textContent = m === 'replicated' ? 'Load Balancer (Round Robin)' : 'Shard Router (hash)';
+  render();
+}
+
+function render() {
+  if (animTimer) clearInterval(animTimer);
+
+  const reqRow = document.getElementById('requests');
+  reqRow.innerHTML = requests.map(r =>
+    `<span class="request-pill bg-${r.color} color-${r.color}" id="pill-${r.color}">${r.label}</span>`
+  ).join('');
+
+  const nodesRow = document.getElementById('nodes');
+  const statsRow = document.getElementById('stats');
+  const insightEl = document.getElementById('insight');
+
+  if (mode === 'replicated') {
+    nodesRow.innerHTML = [1,2,3].map(i =>
+      `<div class="node-box" id="node-${i}">
+        <div class="node-label" style="color:var(--green)">Replica #${i}</div>
+        <div class="node-data">${allData.map(d => `<span class="item bg-${d.toLowerCase()}">${d}</span>`).join('')}</div>
+      </div>`
+    ).join('');
+    statsRow.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Data per Node</div><div class="stat-value" style="color:var(--green)">100%</div></div>
+      <div class="stat-card"><div class="stat-label">Unique Coverage</div><div class="stat-value" style="color:var(--yellow)">100%</div></div>
+      <div class="stat-card"><div class="stat-label">Memory Efficiency</div><div class="stat-value" style="color:var(--red)">33%</div></div>
+    `;
+    insightEl.innerHTML = 'Each replica holds <b>all data</b>. Requests can go to any node. Great for redundancy, but memory stores 3x the same data.';
+  } else {
+    const shardData = [['A','B'],['C'],['D']];
+    const shardColors = [['a','b'],['c'],['d']];
+    nodesRow.innerHTML = [1,2,3].map((i,idx) =>
+      `<div class="node-box" id="node-${i}">
+        <div class="node-label" style="color:var(--mauve)">Shard #${i}</div>
+        <div class="node-data">${shardData[idx].map((d,j) => `<span class="item bg-${shardColors[idx][j]}">${d}</span>`).join('')}</div>
+      </div>`
+    ).join('');
+    statsRow.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Data per Node</div><div class="stat-value" style="color:var(--mauve)">~33%</div></div>
+      <div class="stat-card"><div class="stat-label">Unique Coverage</div><div class="stat-value" style="color:var(--yellow)">100%</div></div>
+      <div class="stat-card"><div class="stat-label">Memory Efficiency</div><div class="stat-value" style="color:var(--green)">100%</div></div>
+    `;
+    insightEl.innerHTML = 'Each shard holds a <b>unique subset</b>. Requests must route to the correct shard. Better memory utilization, but requires smart routing.';
+  }
+
+  animateRouting();
+}
+
+function animateRouting() {
+  let step = 0;
+  const mapping_rep = [1, 2, 3, 1];
+  const mapping_shard = [1, 1, 2, 3];
+
+  animTimer = setInterval(() => {
+    const pills = requests.map((r, i) => document.getElementById(`pill-${r.color}`));
+    const nodes = [1,2,3].map(i => document.getElementById(`node-${i}`));
+
+    pills.forEach(p => { if(p) p.classList.remove('show'); });
+    nodes.forEach(n => { if(n) { n.classList.remove('active'); n.classList.remove('active-shard'); }});
+
+    const idx = step % 4;
+    const pill = pills[idx];
+    if (pill) pill.classList.add('show');
+
+    const target = mode === 'replicated' ? mapping_rep[idx] : mapping_shard[idx];
+    const node = document.getElementById(`node-${target}`);
+    if (node) node.classList.add(mode === 'replicated' ? 'active' : 'active-shard');
+
+    step++;
+  }, 1200);
+
+  setTimeout(() => {
+    const pills = requests.map((r) => document.getElementById(`pill-${r.color}`));
+    pills.forEach(p => { if(p) p.classList.add('show'); });
+  }, 50);
+}
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    const isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>

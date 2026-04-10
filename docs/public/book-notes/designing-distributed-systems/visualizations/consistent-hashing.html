@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consistent Hashing Ring</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086;
+    --surface: #181825; --border: #45475a; --overlay: #313244;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1;
+    --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+    --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b;
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  h2 { text-align: center; font-size: 15px; margin-bottom: 4px; }
+  .sub { text-align: center; font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+  .layout { display: flex; gap: 20px; align-items: flex-start; }
+  .ring-wrap { flex: 1; display: flex; justify-content: center; }
+  canvas { cursor: pointer; }
+  .panel { width: 240px; display: flex; flex-direction: column; gap: 10px; }
+  .panel-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .panel-title { font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: bold; }
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn {
+    padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface); color: var(--fg); font-family: inherit;
+    font-size: 11px; cursor: pointer; transition: all 0.2s;
+  }
+  .btn:hover { border-color: var(--blue); }
+  .btn.add { border-color: var(--green); color: var(--green); }
+  .btn.remove { border-color: var(--red); color: var(--red); }
+  .btn.add:hover { background: rgba(166,227,161,0.15); }
+  .btn.remove:hover { background: rgba(243,139,168,0.15); }
+  .node-list { font-size: 11px; line-height: 2; }
+  .node-item { display: flex; align-items: center; gap: 6px; }
+  .node-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .key-list { font-size: 10px; line-height: 1.8; }
+  .key-item { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid var(--border); }
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; text-align: center; }
+  .stat-label { font-size: 9px; color: var(--muted); margin-bottom: 2px; }
+  .stat-value { font-size: 14px; font-weight: bold; }
+  .insight { margin-top: 10px; padding: 10px 14px; border-radius: 8px; font-size: 11px; line-height: 1.6; text-align: center; background: var(--overlay); border: 1px solid var(--border); }
+  @media (max-width: 700px) {
+    .layout { flex-direction: column; align-items: center; }
+    .panel { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Consistent Hashing Ring</h2>
+  <div class="sub">Add/remove nodes and see how keys are redistributed</div>
+  <div class="layout">
+    <div class="ring-wrap"><canvas id="cv" width="380" height="380"></canvas></div>
+    <div class="panel">
+      <div class="panel-section">
+        <div class="panel-title">NODES</div>
+        <div class="btn-row">
+          <button class="btn add" onclick="addNode()">+ Add Node</button>
+          <button class="btn remove" onclick="removeNode()">- Remove Node</button>
+        </div>
+        <div class="node-list" id="node-list"></div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-title">KEY ASSIGNMENT</div>
+        <div class="key-list" id="key-list"></div>
+      </div>
+    </div>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Nodes</div><div class="stat-value" id="s-nodes" style="color:var(--blue)">3</div></div>
+    <div class="stat-card"><div class="stat-label">Keys</div><div class="stat-value" id="s-keys" style="color:var(--green)">8</div></div>
+    <div class="stat-card"><div class="stat-label">Keys Moved</div><div class="stat-value" id="s-moved" style="color:var(--red)">0</div></div>
+  </div>
+  <div class="insight" id="insight">Add or remove a node to see how consistent hashing minimizes key redistribution.</div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const CX = cv.width / 2, CY = cv.height / 2, R = 150;
+
+const nodeColors = ['--blue','--green','--red','--yellow','--mauve','--peach'];
+const nodeNames = ['Node A','Node B','Node C','Node D','Node E','Node F'];
+
+function simpleHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) { h = ((h << 5) - h + str.charCodeAt(i)) | 0; }
+  return ((h % 360) + 360) % 360;
+}
+
+function getColor(name) {
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+let nodes = [
+  { name: 'Node A', colorVar: '--blue', angle: 30 },
+  { name: 'Node B', colorVar: '--green', angle: 150 },
+  { name: 'Node C', colorVar: '--red', angle: 270 },
+];
+
+const keys = ['user:101','user:202','user:303','img:cat','img:dog','api:/search','api:/login','cache:home'];
+
+let prevAssignment = {};
+let keysMoved = 0;
+
+function getKeyAssignment() {
+  const sorted = [...nodes].sort((a,b) => a.angle - b.angle);
+  const assignment = {};
+  for (const k of keys) {
+    const kAngle = simpleHash(k);
+    let assigned = sorted[0];
+    for (const n of sorted) {
+      if (n.angle >= kAngle) { assigned = n; break; }
+    }
+    assignment[k] = assigned.name;
+  }
+  return assignment;
+}
+
+function computeKeysMoved(prev, curr) {
+  let moved = 0;
+  for (const k of keys) {
+    if (prev[k] && prev[k] !== curr[k]) moved++;
+  }
+  return moved;
+}
+
+function addNode() {
+  if (nodes.length >= 6) return;
+  const idx = nodes.length;
+  const existing = nodes.map(n => n.angle);
+  let bestAngle = 0, bestGap = 0;
+  for (let i = 0; i < existing.length; i++) {
+    const a = existing[i];
+    const b = existing[(i+1) % existing.length];
+    const gap = b > a ? b - a : 360 - a + b;
+    if (gap > bestGap) { bestGap = gap; bestAngle = (a + gap/2) % 360; }
+  }
+  prevAssignment = getKeyAssignment();
+  nodes.push({ name: nodeNames[idx], colorVar: nodeColors[idx], angle: Math.round(bestAngle) });
+  const curr = getKeyAssignment();
+  keysMoved = computeKeysMoved(prevAssignment, curr);
+  render();
+}
+
+function removeNode() {
+  if (nodes.length <= 1) return;
+  prevAssignment = getKeyAssignment();
+  nodes.pop();
+  const curr = getKeyAssignment();
+  keysMoved = computeKeysMoved(prevAssignment, curr);
+  render();
+}
+
+function render() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  ctx.beginPath();
+  ctx.arc(CX, CY, R, 0, Math.PI * 2);
+  ctx.strokeStyle = getColor('--border');
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  for (let d = 0; d < 360; d += 30) {
+    const rad = d * Math.PI / 180;
+    const x1 = CX + (R - 4) * Math.cos(rad);
+    const y1 = CY + (R - 4) * Math.sin(rad);
+    const x2 = CX + (R + 4) * Math.cos(rad);
+    const y2 = CY + (R + 4) * Math.sin(rad);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = getColor('--muted'); ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  const assignment = getKeyAssignment();
+
+  for (const k of keys) {
+    const kAngle = simpleHash(k) * Math.PI / 180;
+    const kx = CX + (R) * Math.cos(kAngle);
+    const ky = CY + (R) * Math.sin(kAngle);
+    const owner = nodes.find(n => n.name === assignment[k]);
+    if (owner) {
+      const nAngle = owner.angle * Math.PI / 180;
+      const nx = CX + R * Math.cos(nAngle);
+      const ny = CY + R * Math.sin(nAngle);
+      ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(nx, ny);
+      ctx.strokeStyle = getColor(owner.colorVar) + '40';
+      ctx.lineWidth = 1; ctx.setLineDash([3,3]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.beginPath(); ctx.arc(kx, ky, 5, 0, Math.PI * 2);
+    ctx.fillStyle = owner ? getColor(owner.colorVar) : getColor('--muted');
+    ctx.fill();
+    const labelR = R + 18;
+    const lx = CX + labelR * Math.cos(kAngle);
+    const ly = CY + labelR * Math.sin(kAngle);
+    ctx.fillStyle = getColor('--muted');
+    ctx.font = '9px monospace';
+    ctx.textAlign = kAngle > Math.PI/2 && kAngle < 3*Math.PI/2 ? 'right' : 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(k, lx, ly);
+  }
+
+  for (const n of nodes) {
+    const rad = n.angle * Math.PI / 180;
+    const nx = CX + R * Math.cos(rad);
+    const ny = CY + R * Math.sin(rad);
+    ctx.beginPath(); ctx.arc(nx, ny, 12, 0, Math.PI * 2);
+    ctx.fillStyle = getColor(n.colorVar);
+    ctx.fill();
+    ctx.fillStyle = getColor('--bg');
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(n.name.split(' ')[1], nx, ny);
+  }
+
+  const nodeListEl = document.getElementById('node-list');
+  nodeListEl.innerHTML = nodes.map(n => {
+    const count = keys.filter(k => assignment[k] === n.name).length;
+    return `<div class="node-item"><span class="node-dot" style="background:${getColor(n.colorVar)}"></span>${n.name} <span style="color:var(--muted)">(${count} keys)</span></div>`;
+  }).join('');
+
+  const keyListEl = document.getElementById('key-list');
+  keyListEl.innerHTML = keys.map(k => {
+    const owner = nodes.find(n => n.name === assignment[k]);
+    const moved = prevAssignment[k] && prevAssignment[k] !== assignment[k];
+    return `<div class="key-item"><span>${k}</span><span style="color:${owner ? getColor(owner.colorVar) : 'var(--muted)'}">${assignment[k]}${moved ? ' *' : ''}</span></div>`;
+  }).join('');
+
+  document.getElementById('s-nodes').textContent = nodes.length;
+  document.getElementById('s-keys').textContent = keys.length;
+  document.getElementById('s-moved').textContent = keysMoved;
+
+  const pct = keys.length > 0 ? ((keysMoved / keys.length) * 100).toFixed(0) : 0;
+  const insightEl = document.getElementById('insight');
+  if (keysMoved > 0) {
+    insightEl.innerHTML = `Only <b style="color:var(--red)">${keysMoved}/${keys.length}</b> keys (${pct}%) were redistributed. With naive modulo hashing, nearly all keys would move.`;
+  } else {
+    insightEl.innerHTML = 'Add or remove a node to see how consistent hashing minimizes key redistribution.';
+  }
+}
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    const isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>

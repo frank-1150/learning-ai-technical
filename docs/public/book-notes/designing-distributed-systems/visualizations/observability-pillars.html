@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Observability Pillars</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086;
+  --surface: #181825; --border: #45475a; --overlay: #313244;
+  --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387;
+}
+.light {
+  --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1;
+  --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+  --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b;
+}
+body {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  background: var(--bg); color: var(--fg); padding: 20px 16px;
+  transition: background 0.3s, color 0.3s;
+}
+.container { max-width: 780px; margin: 0 auto; }
+h2 { font-size: 15px; text-align: center; margin-bottom: 20px; font-weight: 600; }
+.pillars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.pillar {
+  background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+  padding: 14px 10px; cursor: pointer; transition: all 0.3s; text-align: center;
+}
+.pillar:hover { transform: translateY(-2px); }
+.pillar.active { border-color: var(--accent); box-shadow: 0 0 16px rgba(137,180,250,0.15); }
+.pillar .icon { font-size: 28px; margin-bottom: 8px; }
+.pillar .name { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.pillar .sub { font-size: 10px; color: var(--muted); }
+.pillar-logging { --accent: var(--green); }
+.pillar-logging.active { border-color: var(--green); }
+.pillar-logging .name { color: var(--green); }
+.pillar-metrics { --accent: var(--blue); }
+.pillar-metrics.active { border-color: var(--blue); }
+.pillar-metrics .name { color: var(--blue); }
+.pillar-alerting { --accent: var(--red); }
+.pillar-alerting.active { border-color: var(--red); }
+.pillar-alerting .name { color: var(--red); }
+.pillar-tracing { --accent: var(--mauve); }
+.pillar-tracing.active { border-color: var(--mauve); }
+.pillar-tracing .name { color: var(--mauve); }
+
+.detail-panel {
+  background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+  padding: 20px; min-height: 180px; transition: all 0.3s;
+}
+.detail-panel.active-logging { border-color: var(--green); }
+.detail-panel.active-metrics { border-color: var(--blue); }
+.detail-panel.active-alerting { border-color: var(--red); }
+.detail-panel.active-tracing { border-color: var(--mauve); }
+
+.detail-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+.detail-desc { font-size: 12px; line-height: 1.7; color: var(--fg); margin-bottom: 14px; }
+.detail-items { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.detail-item {
+  background: var(--overlay); padding: 6px 12px; border-radius: 6px;
+  font-size: 11px; border: 1px solid var(--border);
+}
+.detail-flow { font-size: 11px; color: var(--muted); padding: 10px 14px; background: var(--overlay); border-radius: 8px; line-height: 1.8; }
+.detail-flow code { color: var(--yellow); }
+
+.relations {
+  margin-top: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+}
+.relation {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; text-align: center; font-size: 10px; line-height: 1.6;
+}
+.relation .arrow { color: var(--peach); font-size: 14px; }
+.relation .label { color: var(--muted); }
+.hint { text-align: center; font-size: 11px; color: var(--muted); margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>可观测性四大支柱</h2>
+  <div class="pillars" id="pillars"></div>
+  <div class="detail-panel" id="detail"></div>
+  <div class="relations">
+    <div class="relation"><span class="arrow">Logging</span> + <span class="arrow">Metrics</span><br><span class="label">日志提供细节，指标提供全局</span></div>
+    <div class="relation"><span class="arrow">Metrics</span> -> <span class="arrow">Alerting</span><br><span class="label">指标偏离 SLO 时触发告警</span></div>
+    <div class="relation"><span class="arrow">Tracing</span> + <span class="arrow">Logging</span><br><span class="label">Correlation ID 串联所有日志</span></div>
+  </div>
+  <div class="hint">点击上方卡片查看各支柱详情</div>
+</div>
+
+<script>
+const pillarsData = [
+  {
+    id: 'logging', icon: '\u{1F4DD}', name: '日志 Logging', sub: '个体执行视角',
+    title: '日志 (Logging) — 理解单次请求的窗口',
+    desc: '日志记录代码中特定位置的执行信息，是最古老也最直觉的可观测性工具。关键在于分级日志（Debug/Info/Warning/Error/Fatal）和条件日志（动态为特定用户开启详细日志）。',
+    items: ['时间戳', '请求 ID', '日志级别', '条件日志', 'Elasticsearch'],
+    flow: '实践: 记录<code>异常和错误</code>情况 + 你在事后复盘时<code>希望拥有</code>的信息'
+  },
+  {
+    id: 'metrics', icon: '\u{1F4CA}', name: '指标 Metrics', sub: '聚合统计视角',
+    title: '指标 (Metrics) — 服务整体健康度',
+    desc: '指标收集跨请求的统计数据：直方图（延迟分布）、计数器（总请求数）、仪表（CPU/内存）。Prometheus 是事实标准，支持 pull 和 push 两种模式。',
+    items: ['Histogram', 'Counter', 'Gauge', 'Prometheus', '时间序列数据库'],
+    flow: '核心指标: <code>请求速率</code> + <code>响应码分布</code> + <code>延迟 P50/P90/P99</code>'
+  },
+  {
+    id: 'alerting', icon: '\u{1F6A8}', name: '告警 Alerting', sub: '主动通知机制',
+    title: '告警 (Alerting) — 在用户之前发现问题',
+    desc: '告警基于 SLO（服务级别目标）设定阈值规则。需要平衡灵敏度：过于灵敏导致"狼来了"，过于迟钝则漏掉真实问题。高级场景需要 AI 异常检测。',
+    items: ['SLO 阈值', '静态告警', '异常检测', 'PagerDuty', '误报控制'],
+    flow: '关键原则: 告警质量 = 服务质量。<code>不要让值班工程师 burnout</code>'
+  },
+  {
+    id: 'tracing', icon: '\u{1F517}', name: '追踪 Tracing', sub: '端到端请求路径',
+    title: '追踪 (Tracing) — 还原用户请求的完整路径',
+    desc: '在微服务架构中，追踪为每个请求分配唯一 Correlation ID，贯穿所有服务调用。OpenTelemetry 提供多语言 SDK 和厂商无关的集成方案。',
+    items: ['Correlation ID', 'HTTP Header 传递', 'OpenTelemetry', 'Jaeger', '调用链可视化'],
+    flow: '实现: <code>x-correlation-id</code> 嵌入所有 API 调用和日志条目'
+  }
+];
+
+const pillarsEl = document.getElementById('pillars');
+const detailEl = document.getElementById('detail');
+let activeIdx = 0;
+
+function renderPillars() {
+  pillarsEl.innerHTML = pillarsData.map((p, i) =>
+    '<div class="pillar pillar-' + p.id + (i === activeIdx ? ' active' : '') + '" onclick="select(' + i + ')">' +
+    '<div class="icon">' + p.icon + '</div>' +
+    '<div class="name">' + p.name + '</div>' +
+    '<div class="sub">' + p.sub + '</div></div>'
+  ).join('');
+}
+
+function renderDetail() {
+  var p = pillarsData[activeIdx];
+  detailEl.className = 'detail-panel active-' + p.id;
+  detailEl.innerHTML =
+    '<div class="detail-title" style="color:var(--' +
+    (p.id === 'logging' ? 'green' : p.id === 'metrics' ? 'blue' : p.id === 'alerting' ? 'red' : 'mauve') +
+    ')">' + p.title + '</div>' +
+    '<div class="detail-desc">' + p.desc + '</div>' +
+    '<div class="detail-items">' + p.items.map(function(it) { return '<span class="detail-item">' + it + '</span>'; }).join('') + '</div>' +
+    '<div class="detail-flow">' + p.flow + '</div>';
+}
+
+function select(i) {
+  activeIdx = i;
+  renderPillars();
+  renderDetail();
+}
+
+function render() {
+  renderPillars();
+  renderDetail();
+}
+
+function syncTheme() {
+  try {
+    var html = window.parent.document.documentElement;
+    var isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>

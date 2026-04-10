@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delivery Semantics</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086;
+    --surface: #181825; --border: #45475a; --overlay: #313244;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7;
+    --green-bg: rgba(166,227,161,0.12); --red-bg: rgba(243,139,168,0.12);
+    --blue-bg: rgba(137,180,250,0.12); --yellow-bg: rgba(249,226,175,0.12);
+    --mauve-bg: rgba(203,166,247,0.12);
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1;
+    --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+    --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef;
+    --green-bg: rgba(64,160,43,0.10); --red-bg: rgba(210,15,57,0.10);
+    --blue-bg: rgba(30,102,245,0.10); --yellow-bg: rgba(223,142,29,0.10);
+    --mauve-bg: rgba(136,57,239,0.10);
+  }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .container { max-width: 820px; margin: 0 auto; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
+  .tab-btn {
+    padding: 8px 20px; border: 2px solid var(--border); border-radius: 8px;
+    background: transparent; color: var(--fg); font-family: inherit;
+    font-size: 13px; cursor: pointer; transition: all 0.3s;
+  }
+  .tab-btn:hover { border-color: var(--blue); }
+  .tab-btn.active-green { border-color: var(--green); background: var(--green-bg); color: var(--green); }
+  .tab-btn.active-red { border-color: var(--red); background: var(--red-bg); color: var(--red); }
+  .tab-btn.active-mauve { border-color: var(--mauve); background: var(--mauve-bg); color: var(--mauve); }
+
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 16px; }
+  .diagram-title { font-size: 15px; font-weight: bold; margin-bottom: 16px; text-align: center; }
+
+  .timeline { margin-top: 16px; }
+  .timeline-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; justify-content: center; flex-wrap: wrap; }
+  .timeline-step { font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--overlay); }
+  .timeline-step.success { border-color: var(--green); color: var(--green); }
+  .timeline-step.fail { border-color: var(--red); color: var(--red); }
+  .timeline-step.retry { border-color: var(--yellow); color: var(--yellow); }
+  .timeline-step.dup { border-color: var(--mauve); color: var(--mauve); }
+  .timeline-arrow { color: var(--muted); font-size: 14px; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .info-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .info-value { font-size: 13px; line-height: 1.5; }
+
+  .summary-bar {
+    margin-top: 16px; padding: 12px 16px; border-radius: 8px;
+    font-size: 12px; line-height: 1.6; text-align: center;
+    border: 1px solid var(--border); background: var(--surface);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="tabs">
+    <button class="tab-btn active-green" id="btn-atleast" onclick="show('atleast')">At-Least-Once</button>
+    <button class="tab-btn" id="btn-atmost" onclick="show('atmost')">At-Most-Once</button>
+    <button class="tab-btn" id="btn-exactly" onclick="show('exactly')">Exactly-Once</button>
+  </div>
+  <div id="content"></div>
+</div>
+
+<script>
+var semantics = {
+  atleast: {
+    color: 'green',
+    title: 'At-Least-Once Delivery',
+    subtitle: '\u81f3\u5c11\u4e00\u6b21\u4ea4\u4ed8',
+    timeline: [
+      { text: 'Send msg', cls: 'success' },
+      { text: 'Timeout', cls: 'fail' },
+      { text: 'Retry #1', cls: 'retry' },
+      { text: 'Timeout', cls: 'fail' },
+      { text: 'Retry #2', cls: 'retry' },
+      { text: 'ACK', cls: 'success' },
+    ],
+    guarantee: '\u6d88\u606f\u4fdd\u8bc1\u81f3\u5c11\u9001\u8fbe\u4e00\u6b21\u3002\u53d1\u9001\u65b9\u5728\u672a\u6536\u5230\u786e\u8ba4\u65f6\u81ea\u52a8\u91cd\u8bd5\u3002',
+    tradeoff: '\u53ef\u80fd\u5bfc\u81f4\u6d88\u606f\u91cd\u590d\u3002\u63a5\u6536\u65b9\u5fc5\u987b\u5177\u5907\u5e42\u7b49\u5904\u7406\u80fd\u529b\uff0c\u5426\u5219\u4f1a\u51fa\u73b0\u91cd\u590d\u6267\u884c\u7684\u526f\u4f5c\u7528\u3002',
+    example: '\u65e5\u5fd7\u6536\u96c6 / \u4e8b\u4ef6\u901a\u77e5 / \u5f02\u6b65\u4efb\u52a1\u961f\u5217',
+    retryPolicy: '\u8d85\u65f6\u540e\u81ea\u52a8\u91cd\u8bd5\uff0c\u76f4\u5230\u6536\u5230 ACK',
+    dupRisk: '\u9ad8 \u2014 \u6d88\u606f\u53ef\u80fd\u88ab\u9001\u8fbe\u591a\u6b21',
+    dataLoss: '\u65e0 \u2014 \u6d88\u606f\u4e0d\u4f1a\u4e22\u5931',
+  },
+  atmost: {
+    color: 'red',
+    title: 'At-Most-Once Delivery',
+    subtitle: '\u81f3\u591a\u4e00\u6b21\u4ea4\u4ed8',
+    timeline: [
+      { text: 'Send msg', cls: 'success' },
+      { text: 'Timeout', cls: 'fail' },
+      { text: 'Give up', cls: 'fail' },
+    ],
+    guarantee: '\u6d88\u606f\u6700\u591a\u9001\u8fbe\u4e00\u6b21\u3002\u53d1\u9001\u65b9\u4e0d\u91cd\u8bd5\uff0c\u5931\u8d25\u5373\u653e\u5f03\u3002',
+    tradeoff: '\u6d88\u606f\u53ef\u80fd\u4e22\u5931\uff0c\u4f46\u7edd\u4e0d\u4f1a\u91cd\u590d\u3002\u9002\u7528\u4e8e\u91cd\u590d\u6267\u884c\u4ee3\u4ef7\u6781\u9ad8\u7684\u573a\u666f\u3002',
+    example: '\u4fe1\u7528\u5361\u6263\u6b3e / \u77ed\u4fe1\u9a8c\u8bc1\u7801\u53d1\u9001',
+    retryPolicy: '\u4e0d\u91cd\u8bd5\uff0c\u53d1\u9001\u4e00\u6b21\u5373\u7ed3\u675f',
+    dupRisk: '\u65e0 \u2014 \u6d88\u606f\u7edd\u4e0d\u91cd\u590d',
+    dataLoss: '\u53ef\u80fd \u2014 \u6d88\u606f\u53ef\u80fd\u6c38\u8fdc\u4e0d\u9001\u8fbe',
+  },
+  exactly: {
+    color: 'mauve',
+    title: 'Exactly-Once Delivery',
+    subtitle: '\u6070\u597d\u4e00\u6b21\u4ea4\u4ed8\uff08\u7406\u8bba\u7406\u60f3\uff09',
+    timeline: [
+      { text: 'Send msg', cls: 'success' },
+      { text: 'Dedup ID', cls: 'dup' },
+      { text: 'Process', cls: 'success' },
+      { text: 'ACK', cls: 'success' },
+    ],
+    guarantee: '\u6d88\u606f\u6070\u597d\u9001\u8fbe\u5e76\u5904\u7406\u4e00\u6b21\u3002\u5b9e\u8df5\u4e2d\u901a\u8fc7 at-least-once + \u5e42\u7b49\u53bb\u91cd\u6765\u8fd1\u4f3c\u5b9e\u73b0\u3002',
+    tradeoff: '\u5b9e\u73b0\u590d\u6742\u5ea6\u6781\u9ad8\uff0c\u9700\u8981\u5206\u5e03\u5f0f\u4e8b\u52a1\u6216\u552f\u4e00 ID \u53bb\u91cd\u673a\u5236\u3002\u771f\u6b63\u7684 exactly-once \u51e0\u4e4e\u4e0d\u53ef\u80fd\u3002',
+    example: '\u91d1\u878d\u8f6c\u8d26 / \u8ba2\u5355\u521b\u5efa\uff08\u901a\u8fc7\u5e42\u7b49 key \u8fd1\u4f3c\u5b9e\u73b0\uff09',
+    retryPolicy: '\u91cd\u8bd5 + \u670d\u52a1\u7aef\u901a\u8fc7\u552f\u4e00 ID \u53bb\u91cd',
+    dupRisk: '\u7406\u8bba\u4e0a\u65e0 \u2014 \u4f46\u5b9e\u73b0\u4e0a\u53d6\u51b3\u4e8e\u53bb\u91cd\u673a\u5236\u7684\u53ef\u9760\u6027',
+    dataLoss: '\u7406\u8bba\u4e0a\u65e0 \u2014 \u4f46\u5b9e\u73b0\u6210\u672c\u6781\u9ad8',
+  },
+};
+
+var current = 'atleast';
+
+function show(key) {
+  current = key;
+  render();
+}
+
+function render() {
+  var s = semantics[current];
+  var colorVar = 'var(--' + s.color + ')';
+
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.className = 'tab-btn';
+  });
+  var activeBtn = document.getElementById('btn-' + current);
+  if (activeBtn) activeBtn.className = 'tab-btn active-' + s.color;
+
+  var timelineHtml = s.timeline.map(function(step, i) {
+    var arrow = i < s.timeline.length - 1 ? '<span class="timeline-arrow">&rarr;</span>' : '';
+    return '<span class="timeline-step ' + step.cls + '">' + step.text + '</span>' + arrow;
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    '<div class="diagram">' +
+      '<div class="diagram-title" style="color: ' + colorVar + '">' + s.title + '</div>' +
+      '<div style="text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 16px;">' + s.subtitle + '</div>' +
+      '<div class="timeline"><div class="timeline-row">' + timelineHtml + '</div></div>' +
+    '</div>' +
+    '<div class="info-grid">' +
+      '<div class="info-card"><div class="info-label">\u4fdd\u8bc1</div><div class="info-value">' + s.guarantee + '</div></div>' +
+      '<div class="info-card"><div class="info-label">\u6743\u8861</div><div class="info-value">' + s.tradeoff + '</div></div>' +
+      '<div class="info-card"><div class="info-label">\u91cd\u8bd5\u7b56\u7565</div><div class="info-value">' + s.retryPolicy + '</div></div>' +
+      '<div class="info-card"><div class="info-label">\u5178\u578b\u573a\u666f</div><div class="info-value">' + s.example + '</div></div>' +
+      '<div class="info-card"><div class="info-label">\u91cd\u590d\u98ce\u9669</div><div class="info-value">' + s.dupRisk + '</div></div>' +
+      '<div class="info-card"><div class="info-label">\u6570\u636e\u4e22\u5931\u98ce\u9669</div><div class="info-value">' + s.dataLoss + '</div></div>' +
+    '</div>' +
+    '<div class="summary-bar" style="border-color: ' + colorVar + '; color: ' + colorVar + ';">' +
+      (current === 'exactly'
+        ? '\u5b9e\u8df5\u5efa\u8bae\uff1a\u4f7f\u7528 at-least-once + \u5e42\u7b49 key \u53bb\u91cd\uff0c\u662f\u5de5\u4e1a\u754c\u6700\u63a5\u8fd1 exactly-once \u7684\u53ef\u884c\u65b9\u6848'
+        : current === 'atleast'
+          ? '\u5b9e\u8df5\u5efa\u8bae\uff1a\u914d\u5408\u5e42\u7b49\u63a5\u53e3\u8bbe\u8ba1\uff0cat-least-once \u662f\u5206\u5e03\u5f0f\u7cfb\u7edf\u4e2d\u6700\u5e38\u7528\u7684\u4ea4\u4ed8\u8bed\u4e49'
+          : '\u5b9e\u8df5\u5efa\u8bae\uff1a\u4ec5\u5728\u91cd\u590d\u6267\u884c\u4ee3\u4ef7\u8fdc\u5927\u4e8e\u4e22\u5931\u4ee3\u4ef7\u65f6\u4f7f\u7528 at-most-once') +
+    '</div>';
+}
+
+function syncTheme() {
+  try {
+    var html = window.parent.document.documentElement;
+    var isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>

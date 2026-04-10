@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Work Queue Architecture</title>
+<style>
+:root {
+  --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086;
+  --surface: #181825; --border: #45475a; --overlay: #313244;
+  --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387;
+}
+.light {
+  --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1;
+  --surface: #e6e9ef; --border: #ccd0da; --overlay: #dce0e8;
+  --green: #40a02b; --red: #d20f39; --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  padding: 20px; overflow-x: hidden;
+}
+h3 { font-size: 14px; color: var(--muted); margin-bottom: 16px; text-align: center; font-weight: 500; }
+.canvas-wrap { display: flex; justify-content: center; }
+canvas { border-radius: 8px; }
+.controls {
+  display: flex; justify-content: center; gap: 12px; margin-top: 16px; flex-wrap: wrap;
+}
+.controls button {
+  background: var(--overlay); color: var(--fg); border: 1px solid var(--border);
+  padding: 6px 16px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 12px;
+  transition: all 0.2s;
+}
+.controls button:hover { background: var(--border); }
+.controls button.active { background: var(--blue); color: var(--surface); border-color: var(--blue); }
+.stats {
+  display: flex; justify-content: center; gap: 24px; margin-top: 12px; font-size: 12px; color: var(--muted);
+}
+.stats span { display: flex; align-items: center; gap: 4px; }
+.stats .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+</style>
+</head>
+<body>
+<h3>Work Queue Architecture: Source -> Queue Manager -> Workers</h3>
+<div class="canvas-wrap"><canvas id="c" width="720" height="360"></canvas></div>
+<div class="controls">
+  <button id="btnAdd" class="active">Add Work Items</button>
+  <button id="btnScale">Scale Workers (3 -> 5)</button>
+  <button id="btnReset">Reset</button>
+</div>
+<div class="stats">
+  <span><span class="dot" style="background:var(--yellow)"></span> Pending: <b id="statPending">0</b></span>
+  <span><span class="dot" style="background:var(--blue)"></span> Processing: <b id="statProcessing">0</b></span>
+  <span><span class="dot" style="background:var(--green)"></span> Completed: <b id="statCompleted">0</b></span>
+  <span>Workers: <b id="statWorkers">3</b></span>
+</div>
+
+<script>
+// 1. All declarations and function definitions first
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const dpr = window.devicePixelRatio || 1;
+
+function initCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+}
+
+let workerCount = 3;
+let items = [];
+let nextId = 0;
+let completed = 0;
+
+const STATES = { QUEUED: 0, TO_MANAGER: 1, IN_QUEUE: 2, TO_WORKER: 3, PROCESSING: 4, DONE: 5 };
+
+const sourceBox = { x: 40, y: 140, w: 100, h: 80 };
+const managerBox = { x: 220, y: 140, w: 120, h: 80 };
+
+function getWorkerBoxes() {
+  const boxes = [];
+  const startY = 180 - (workerCount - 1) * 35;
+  for (let i = 0; i < workerCount; i++) {
+    boxes.push({ x: 520, y: startY + i * 70, w: 140, h: 50 });
+  }
+  return boxes;
+}
+
+function getStyle() {
+  const s = getComputedStyle(document.body);
+  return {
+    bg: s.getPropertyValue('--bg').trim(),
+    fg: s.getPropertyValue('--fg').trim(),
+    muted: s.getPropertyValue('--muted').trim(),
+    surface: s.getPropertyValue('--surface').trim(),
+    border: s.getPropertyValue('--border').trim(),
+    overlay: s.getPropertyValue('--overlay').trim(),
+    green: s.getPropertyValue('--green').trim(),
+    red: s.getPropertyValue('--red').trim(),
+    blue: s.getPropertyValue('--blue').trim(),
+    yellow: s.getPropertyValue('--yellow').trim(),
+    mauve: s.getPropertyValue('--mauve').trim(),
+    peach: s.getPropertyValue('--peach').trim(),
+  };
+}
+
+function drawBox(x, y, w, h, label, color, st) {
+  ctx.fillStyle = st.overlay;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.font = '11px SF Mono, Fira Code, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y + h / 2);
+}
+
+function drawArrow(x1, y1, x2, y2, st) {
+  ctx.strokeStyle = st.border;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  ctx.fillStyle = st.border;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - 8 * Math.cos(angle - 0.4), y2 - 8 * Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - 8 * Math.cos(angle + 0.4), y2 - 8 * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawItem(x, y, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(x - 8, y - 8, 16, 16, 3);
+  ctx.fill();
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function addItems(count) {
+  for (let i = 0; i < count; i++) {
+    items.push({
+      id: nextId++,
+      state: STATES.QUEUED,
+      t: 0,
+      assignedWorker: -1,
+      delay: Math.random() * 0.3,
+    });
+  }
+}
+
+function update(dt) {
+  const workers = getWorkerBoxes();
+  const busyWorkers = new Set();
+  items.forEach(item => {
+    if (item.state === STATES.PROCESSING || item.state === STATES.TO_WORKER) {
+      busyWorkers.add(item.assignedWorker);
+    }
+  });
+
+  items.forEach(item => {
+    if (item.delay > 0) { item.delay -= dt; return; }
+    item.t += dt;
+    switch (item.state) {
+      case STATES.QUEUED:
+        if (item.t > 0.6) { item.state = STATES.TO_MANAGER; item.t = 0; }
+        break;
+      case STATES.TO_MANAGER:
+        if (item.t > 0.5) { item.state = STATES.IN_QUEUE; item.t = 0; }
+        break;
+      case STATES.IN_QUEUE:
+        if (item.t > 0.3) {
+          let freeWorker = -1;
+          for (let w = 0; w < workerCount; w++) {
+            if (!busyWorkers.has(w)) { freeWorker = w; break; }
+          }
+          if (freeWorker >= 0) {
+            item.assignedWorker = freeWorker;
+            item.state = STATES.TO_WORKER;
+            item.t = 0;
+            busyWorkers.add(freeWorker);
+          }
+        }
+        break;
+      case STATES.TO_WORKER:
+        if (item.t > 0.5) { item.state = STATES.PROCESSING; item.t = 0; }
+        break;
+      case STATES.PROCESSING:
+        if (item.t > 1.2 + Math.random() * 0.5) { item.state = STATES.DONE; item.t = 0; completed++; }
+        break;
+    }
+  });
+
+  items = items.filter(item => item.state !== STATES.DONE || item.t < 0.5);
+}
+
+function render() {
+  const st = getStyle();
+  const W = 720, H = 360;
+  ctx.clearRect(0, 0, W, H);
+
+  const workers = getWorkerBoxes();
+
+  // Draw boxes
+  drawBox(sourceBox.x, sourceBox.y, sourceBox.w, sourceBox.h, 'Source\nContainer', st.peach, st);
+  drawBox(managerBox.x, managerBox.y, managerBox.w, managerBox.h, 'Work Queue\nManager', st.blue, st);
+  workers.forEach((wb, i) => {
+    drawBox(wb.x, wb.y, wb.w, wb.h, `Worker #${i + 1}`, st.green, st);
+  });
+
+  // Draw arrows
+  drawArrow(sourceBox.x + sourceBox.w, sourceBox.y + sourceBox.h / 2,
+            managerBox.x, managerBox.y + managerBox.h / 2, st);
+  workers.forEach(wb => {
+    drawArrow(managerBox.x + managerBox.w, managerBox.y + managerBox.h / 2,
+              wb.x, wb.y + wb.h / 2, st);
+  });
+
+  // Labels
+  ctx.fillStyle = st.muted;
+  ctx.font = '10px SF Mono, Fira Code, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('REST API', (sourceBox.x + sourceBox.w + managerBox.x) / 2, sourceBox.y - 8);
+  ctx.fillText('/api/v1/items', (sourceBox.x + sourceBox.w + managerBox.x) / 2, sourceBox.y + sourceBox.h + 18);
+  ctx.fillText('ConfigMap', (managerBox.x + managerBox.w + 520) / 2, sourceBox.y - 8);
+  ctx.fillText('(file-based)', (managerBox.x + managerBox.w + 520) / 2, sourceBox.y + sourceBox.h + 18);
+
+  // Draw items
+  items.forEach(item => {
+    if (item.delay > 0) return;
+    let x, y;
+    const p = Math.min(item.t / 0.5, 1);
+    switch (item.state) {
+      case STATES.QUEUED:
+        x = sourceBox.x + sourceBox.w / 2;
+        y = sourceBox.y + sourceBox.h / 2;
+        drawItem(x, y, st.yellow);
+        break;
+      case STATES.TO_MANAGER:
+        x = lerp(sourceBox.x + sourceBox.w, managerBox.x, p);
+        y = sourceBox.y + sourceBox.h / 2;
+        drawItem(x, y, st.yellow);
+        break;
+      case STATES.IN_QUEUE:
+        x = managerBox.x + managerBox.w / 2;
+        y = managerBox.y + managerBox.h / 2;
+        drawItem(x, y, st.yellow);
+        break;
+      case STATES.TO_WORKER: {
+        const wb = workers[item.assignedWorker];
+        if (!wb) break;
+        x = lerp(managerBox.x + managerBox.w, wb.x, p);
+        y = lerp(managerBox.y + managerBox.h / 2, wb.y + wb.h / 2, p);
+        drawItem(x, y, st.blue);
+        break;
+      }
+      case STATES.PROCESSING: {
+        const wb = workers[item.assignedWorker];
+        if (!wb) break;
+        x = wb.x + wb.w / 2;
+        y = wb.y + wb.h / 2;
+        const pulse = 0.6 + 0.4 * Math.sin(item.t * 6);
+        ctx.globalAlpha = pulse;
+        drawItem(x, y, st.blue);
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case STATES.DONE: {
+        const wb = workers[item.assignedWorker];
+        if (!wb) break;
+        x = wb.x + wb.w + 10;
+        y = wb.y + wb.h / 2;
+        ctx.globalAlpha = 1 - item.t * 2;
+        drawItem(x, y, st.green);
+        ctx.globalAlpha = 1;
+        break;
+      }
+    }
+  });
+
+  // Update stats
+  let pending = 0, processing = 0;
+  items.forEach(item => {
+    if (item.state <= STATES.IN_QUEUE) pending++;
+    else if (item.state <= STATES.PROCESSING) processing++;
+  });
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statProcessing').textContent = processing;
+  document.getElementById('statCompleted').textContent = completed;
+  document.getElementById('statWorkers').textContent = workerCount;
+}
+
+let lastTime = 0;
+function loop(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.1);
+  lastTime = time;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+function setupControls() {
+  document.getElementById('btnAdd').addEventListener('click', () => addItems(5));
+  document.getElementById('btnScale').addEventListener('click', function() {
+    if (workerCount === 3) {
+      workerCount = 5;
+      this.textContent = 'Scale Workers (5 -> 3)';
+    } else {
+      workerCount = 3;
+      this.textContent = 'Scale Workers (3 -> 5)';
+    }
+  });
+  document.getElementById('btnReset').addEventListener('click', () => {
+    items = [];
+    nextId = 0;
+    completed = 0;
+    workerCount = 3;
+    document.getElementById('btnScale').textContent = 'Scale Workers (3 -> 5)';
+  });
+}
+
+// 2. Theme sync and initial render LAST
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    const isDark = html.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+
+initCanvas();
+addItems(4);
+setupControls();
+syncTheme();
+requestAnimationFrame(loop);
+try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch(e) {}
+</script>
+</body>
+</html>
