@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 
 const props = defineProps<{
@@ -9,18 +9,64 @@ const props = defineProps<{
 }>()
 
 const iframeSrc = computed(() => withBase(props.src))
-const iframeHeight = computed(() => props.height || '400px')
+const minHeight = computed(() => props.height || '400px')
+
+const iframeEl = ref<HTMLIFrameElement | null>(null)
+const computedHeight = ref(props.height || '400px')
+
+let resizeObserver: ResizeObserver | null = null
+
+function readHeight(): number {
+  const iframe = iframeEl.value
+  if (!iframe) return 0
+  try {
+    const body = iframe.contentDocument?.body
+    if (!body) return 0
+    // 临时设为 1px，使 min-height: 100vh = 1px，scrollHeight 反映真实内容高度
+    const prev = iframe.style.height
+    iframe.style.height = '1px'
+    const h = body.scrollHeight
+    iframe.style.height = prev
+    return h
+  } catch {
+    return 0
+  }
+}
+
+function updateHeight() {
+  const h = readHeight()
+  if (h > 0) computedHeight.value = `${h}px`
+}
+
+function onLoad() {
+  updateHeight()
+  const iframe = iframeEl.value
+  if (!iframe) return
+  try {
+    const body = iframe.contentDocument?.body
+    if (!body) return
+    resizeObserver = new ResizeObserver(updateHeight)
+    resizeObserver.observe(body)
+  } catch { /* 同源访问失败时静默降级 */ }
+}
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+})
 </script>
 
 <template>
   <div class="html-visualization">
     <div v-if="title" class="viz-title">{{ title }}</div>
     <iframe
+      ref="iframeEl"
       :src="iframeSrc"
-      :style="{ height: iframeHeight }"
+      :style="{ height: computedHeight, minHeight: minHeight }"
       frameborder="0"
       loading="lazy"
       sandbox="allow-scripts allow-same-origin"
+      @load="onLoad"
     />
   </div>
 </template>
