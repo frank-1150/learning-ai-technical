@@ -33,8 +33,6 @@ This project has a **bilingual (zh/en)** VitePress site. When adding or removing
   </script>
   ```
 
-- **`\uXXXX` escapes are JavaScript-only**: In HTML text nodes (outside `<script>`), `\u6570` renders literally as the characters `\u6570`, not as the Chinese character. Always write Chinese characters directly in HTML content. Unicode escapes inside JS string literals (e.g. `var s = '\u6570\u636e'`) are fine.
-
 ## GitHub Actions Deployment
 
 - The deploy workflow is at `.github/workflows/deploy.yml`.
