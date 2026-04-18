@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Precision Formats Explorer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --dim: #a6adc8;
+    --surface: #181825; --border: #45475a;
+    --sign: #f38ba8; --exp: #89b4fa; --mant: #a6e3a1;
+    --int: #f9e2af; --block: #cba6f7;
+    --zero: #313244; --zero-fg: #6c7086;
+    --ok: #a6e3a1; --warn: #f9e2af; --err: #f38ba8;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --dim: #6c6f85;
+    --surface: #e6e9ef; --border: #ccd0da;
+    --sign: #d20f39; --exp: #1e66f5; --mant: #40a02b;
+    --int: #df8e1d; --block: #8839ef;
+    --zero: #dce0e8; --zero-fg: #9ca0b0;
+    --ok: #40a02b; --warn: #df8e1d; --err: #d20f39;
+  }
+  body {
+    font-family: -apple-system, 'SF Pro Text', 'Inter', sans-serif;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s;
+    font-size: 14px;
+  }
+  .mono { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace; }
+  .container { max-width: 920px; margin: 0 auto; }
+  .header { margin-bottom: 16px; }
+  .title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 12px; }
+  .input-row {
+    display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .input-row label { font-size: 12px; color: var(--dim); }
+  .input-row input {
+    background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+    padding: 6px 10px; border-radius: 6px; font-family: 'SF Mono', monospace;
+    font-size: 13px; width: 180px;
+  }
+  .input-row input:focus { outline: none; border-color: var(--exp); }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+  .preset {
+    background: var(--surface); color: var(--dim); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 12px; cursor: pointer; font-size: 11px;
+    font-family: 'SF Mono', monospace; transition: all 0.15s;
+  }
+  .preset:hover { border-color: var(--exp); color: var(--fg); }
+  .legend {
+    display: flex; gap: 16px; margin-bottom: 8px; font-size: 11px; flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; color: var(--dim); }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+  .fmt-name { font-weight: 600; color: var(--fg); white-space: nowrap; }
+  .fmt-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .bits-cell { white-space: nowrap; line-height: 1.2; }
+  .bit {
+    display: inline-block; width: 13px; height: 18px;
+    border-radius: 2px; text-align: center; font-family: 'SF Mono', monospace;
+    font-size: 10px; line-height: 18px; margin-right: 1px; color: #1e1e2e;
+    font-weight: 600;
+  }
+  .light .bit { color: #eff1f5; }
+  .bit.sign { background: var(--sign); }
+  .bit.exp { background: var(--exp); }
+  .bit.mant { background: var(--mant); }
+  .bit.int { background: var(--int); }
+  .bit.zero { background: var(--zero); color: var(--zero-fg); }
+  .bits-sep { display: inline-block; width: 4px; }
+  .value-cell { font-family: 'SF Mono', monospace; font-size: 12px; color: var(--fg); }
+  .err-cell { font-family: 'SF Mono', monospace; font-size: 11px; }
+  .err-ok { color: var(--ok); }
+  .err-warn { color: var(--warn); }
+  .err-err { color: var(--err); }
+  .status { font-size: 10px; color: var(--err); margin-top: 2px; }
+  .footnote { margin-top: 12px; font-size: 11px; color: var(--muted); line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="title">浮点精度格式二进制对照</div>
+    <div class="subtitle">输入一个数字，看它在每种格式下的位表示、解码值和相对误差</div>
+  </div>
+
+  <div class="input-row">
+    <label for="num">输入数值:</label>
+    <input id="num" type="text" value="3.14159" class="mono" />
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="swatch" style="background:var(--sign)"></div>符号位 (Sign)</div>
+    <div class="legend-item"><div class="swatch" style="background:var(--exp)"></div>指数位 (Exponent)</div>
+    <div class="legend-item"><div class="swatch" style="background:var(--mant)"></div>尾数位 (Mantissa)</div>
+    <div class="legend-item"><div class="swatch" style="background:var(--int)"></div>整数位 (INT)</div>
+    <div class="legend-item"><div class="swatch" style="background:var(--block)"></div>块缩放因子</div>
+  </div>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th style="width:160px">格式</th>
+        <th>位表示（符号/指数/尾数）</th>
+        <th style="width:140px">解码值</th>
+        <th style="width:100px">相对误差</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <div class="footnote">
+    说明: NVFP4 实际硬件实现配合 per-block 缩放因子（每 16 元素一个 FP8 scale）。此处为演示假设 scale=1. INT8 的 scale 由输入幅值自动推导（tensor max = max(|x|, 1)）。
+  </div>
+</div>
+
+<script>
+const PRESETS = [
+  ['3.14159', 'π'],
+  ['0.00123', '小数'],
+  ['65504', 'FP16 max'],
+  ['448', 'FP8 E4M3 max'],
+  ['6', 'NVFP4 max'],
+  ['-2.5', '负数'],
+  ['1e-5', '极小'],
+  ['1e10', '极大'],
+];
+
+const FORMATS = [
+  { name: 'FP32',       desc: 'IEEE 754 单精度 · 基准', expBits: 8,  mantBits: 23, bias: 127 },
+  { name: 'FP16',       desc: '半精度 · 训练混合精度', expBits: 5,  mantBits: 10, bias: 15 },
+  { name: 'BF16',       desc: 'Brain Float · FP32 范围 + 低精度', expBits: 8,  mantBits: 7,  bias: 127 },
+  { name: 'FP8 E4M3',   desc: '推理 forward · 精度优先 · max ±448', expBits: 4,  mantBits: 3,  bias: 7 },
+  { name: 'FP8 E5M2',   desc: '训练 gradient · 范围优先 · max ±57344', expBits: 5,  mantBits: 2,  bias: 15 },
+  { name: 'NVFP4 E2M1', desc: 'Rubin 推理核心 · max ±6 · 配合块缩放', expBits: 2,  mantBits: 1,  bias: 1 },
+  { name: 'INT8',       desc: '经典整数量化 · 需要 scale', int: 8 },
+];
+
+function encodeFloat(x, expBits, mantBits, bias) {
+  if (!isFinite(x) || isNaN(x)) return { status: 'invalid' };
+  if (x === 0) return { sign: 0, exp: 0, mant: 0, value: 0, bits: (expBits + mantBits + 1), status: 'zero' };
+  const sign = x < 0 ? 1 : 0;
+  const a = Math.abs(x);
+  const e = Math.floor(Math.log2(a));
+  const mantFrac = a / Math.pow(2, e) - 1;
+  let biasedExp = e + bias;
+  const maxExp = (1 << expBits) - 1;
+  // Use maxExp-1 as largest finite biased exponent (top reserved for inf/NaN semantics, treat as clamp)
+  const maxFiniteExp = maxExp - 1;
+  if (biasedExp <= 0) return { sign, exp: 0, mant: 0, value: 0, bits: expBits + mantBits + 1, status: 'underflow' };
+  if (biasedExp > maxFiniteExp) {
+    const mantMax = (1 << mantBits) - 1;
+    const val = (sign ? -1 : 1) * (1 + mantMax / (1 << mantBits)) * Math.pow(2, maxFiniteExp - bias);
+    return { sign, exp: maxFiniteExp, mant: mantMax, value: val, bits: expBits + mantBits + 1, status: 'overflow' };
+  }
+  let mantQ = Math.round(mantFrac * (1 << mantBits));
+  let be = biasedExp;
+  if (mantQ === (1 << mantBits)) {
+    mantQ = 0; be += 1;
+    if (be > maxFiniteExp) {
+      const mantMax = (1 << mantBits) - 1;
+      const val = (sign ? -1 : 1) * (1 + mantMax / (1 << mantBits)) * Math.pow(2, maxFiniteExp - bias);
+      return { sign, exp: maxFiniteExp, mant: mantMax, value: val, bits: expBits + mantBits + 1, status: 'overflow' };
+    }
+  }
+  const value = (sign ? -1 : 1) * (1 + mantQ / (1 << mantBits)) * Math.pow(2, be - bias);
+  return { sign, exp: be, mant: mantQ, value, bits: expBits + mantBits + 1, status: 'ok' };
+}
+
+function encodeInt(x, bits) {
+  const max = (1 << (bits - 1)) - 1;  // 127 for int8
+  const scale = Math.max(Math.abs(x), 1) / max;
+  const q = Math.max(-max - 1, Math.min(max, Math.round(x / scale)));
+  const value = q * scale;
+  return { q, scale, value, bits, status: 'ok' };
+}
+
+function toBin(n, width) {
+  let s = '';
+  for (let i = width - 1; i >= 0; i--) s += ((n >>> i) & 1);
+  return s;
+}
+
+function fmtNum(v) {
+  if (v === 0) return '0';
+  const a = Math.abs(v);
+  if (a < 0.001 || a >= 1e6) return v.toExponential(4);
+  if (Number.isInteger(v)) return v.toString();
+  return v.toPrecision(6).replace(/\.?0+$/, '');
+}
+
+function fmtPct(p) {
+  const a = Math.abs(p);
+  if (a < 0.001) return '< 0.001%';
+  if (a < 0.01)  return (p * 100).toFixed(4) + '%';
+  if (a < 1)     return (p * 100).toFixed(2) + '%';
+  return (p * 100).toFixed(1) + '%';
+}
+
+function bitSpan(ch, cls) {
+  return `<span class="bit ${cls}">${ch}</span>`;
+}
+
+function renderBits(signBit, signStr, expBit, expStr, mantBit, mantStr) {
+  let html = '';
+  html += signStr.split('').map(b => bitSpan(b, signBit)).join('');
+  html += '<span class="bits-sep"></span>';
+  html += expStr.split('').map(b => bitSpan(b, expBit)).join('');
+  html += '<span class="bits-sep"></span>';
+  html += mantStr.split('').map(b => bitSpan(b, mantBit)).join('');
+  return html;
+}
+
+function renderRow(fmt, input) {
+  if (fmt.int) {
+    const r = encodeInt(input, fmt.int);
+    const bits = toBin(r.q < 0 ? r.q + 256 : r.q, fmt.int);
+    const bitsHtml = bits.split('').map(b => bitSpan(b, 'int')).join('');
+    const err = input === 0 ? 0 : (r.value - input) / input;
+    const errCls = Math.abs(err) < 0.01 ? 'err-ok' : Math.abs(err) < 0.1 ? 'err-warn' : 'err-err';
+    return `
+      <tr>
+        <td>
+          <div class="fmt-name">${fmt.name} <span style="color:var(--muted);font-weight:400">(${fmt.int} bit)</span></div>
+          <div class="fmt-desc">${fmt.desc}</div>
+          <div class="fmt-desc">scale = ${fmtNum(r.scale)}</div>
+        </td>
+        <td class="bits-cell">${bitsHtml} <span style="color:var(--muted);font-size:10px;margin-left:6px">q=${r.q}</span></td>
+        <td class="value-cell">${fmtNum(r.value)}</td>
+        <td class="err-cell ${errCls}">${fmtPct(err)}</td>
+      </tr>`;
+  }
+  const r = encodeFloat(input, fmt.expBits, fmt.mantBits, fmt.bias);
+  let bitsHtml, valueStr, err, errCls, statusNote = '';
+  if (r.status === 'zero' || r.status === 'underflow') {
+    bitsHtml = Array(1 + fmt.expBits + fmt.mantBits).fill(0)
+      .map(() => bitSpan('0', 'zero')).join('');
+    valueStr = '0';
+    err = input === 0 ? 0 : 1;
+    errCls = input === 0 ? 'err-ok' : 'err-err';
+    statusNote = r.status === 'underflow' ? '<div class="status">下溢 → 刷 0</div>' : '';
+  } else if (r.status === 'overflow') {
+    const sStr = toBin(r.sign, 1), eStr = toBin(r.exp, fmt.expBits), mStr = toBin(r.mant, fmt.mantBits);
+    bitsHtml = renderBits('sign', sStr, 'exp', eStr, 'mant', mStr);
+    valueStr = fmtNum(r.value);
+    err = input === 0 ? 0 : (r.value - input) / input;
+    errCls = 'err-err';
+    statusNote = '<div class="status">上溢 → 饱和到最大值</div>';
+  } else {
+    const sStr = toBin(r.sign, 1), eStr = toBin(r.exp, fmt.expBits), mStr = toBin(r.mant, fmt.mantBits);
+    bitsHtml = renderBits('sign', sStr, 'exp', eStr, 'mant', mStr);
+    valueStr = fmtNum(r.value);
+    err = input === 0 ? 0 : (r.value - input) / input;
+    errCls = Math.abs(err) < 0.001 ? 'err-ok' : Math.abs(err) < 0.05 ? 'err-warn' : 'err-err';
+  }
+  return `
+    <tr>
+      <td>
+        <div class="fmt-name">${fmt.name} <span style="color:var(--muted);font-weight:400">(${1 + fmt.expBits + fmt.mantBits} bit)</span></div>
+        <div class="fmt-desc">${fmt.desc}</div>
+        <div class="fmt-desc">1 sign / ${fmt.expBits} exp / ${fmt.mantBits} mant · bias ${fmt.bias}</div>
+      </td>
+      <td class="bits-cell">${bitsHtml}${statusNote}</td>
+      <td class="value-cell">${valueStr}</td>
+      <td class="err-cell ${errCls}">${fmtPct(err)}</td>
+    </tr>`;
+}
+
+function render() {
+  const numInput = document.getElementById('num');
+  const v = parseFloat(numInput.value);
+  const tbody = document.getElementById('tbody');
+  if (!isFinite(v)) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--err);padding:20px;text-align:center">请输入有效数字</td></tr>';
+    return;
+  }
+  tbody.innerHTML = FORMATS.map(f => renderRow(f, v)).join('');
+}
+
+function renderPresets() {
+  const wrap = document.getElementById('presets');
+  wrap.innerHTML = PRESETS.map(([val, lbl]) =>
+    `<button class="preset" data-v="${val}">${val} <span style="opacity:0.6">${lbl}</span></button>`
+  ).join('');
+  wrap.addEventListener('click', e => {
+    const t = e.target.closest('.preset');
+    if (!t) return;
+    document.getElementById('num').value = t.dataset.v;
+    render();
+  });
+}
+
+document.getElementById('num').addEventListener('input', render);
+renderPresets();
+
+// Theme sync — must be LAST (TDZ safety: all const/let and fn decls above)
+function syncTheme() {
+  try {
+    const isDark = window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

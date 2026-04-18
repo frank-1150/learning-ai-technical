@@ -183,7 +183,8 @@ function sidebar(): DefaultTheme.Sidebar {
             collapsed: false,
             items: [
               { text: '介绍', link: '/zh/machine-learning/neural-networks/' },
-              { text: 'ChatGPT 概览 (3Blue1Brown)', link: '/zh/machine-learning/neural-networks/chatgpt-overview-3blue1brown' }
+              { text: 'ChatGPT 概览 (3Blue1Brown)', link: '/zh/machine-learning/neural-networks/chatgpt-overview-3blue1brown' },
+              { text: 'Nemotron 3 Super 混合架构', link: '/zh/machine-learning/neural-networks/nemotron-3-super-hybrid-architecture' }
             ]
           },
           {
@@ -191,6 +192,8 @@ function sidebar(): DefaultTheme.Sidebar {
             collapsed: false,
             items: [
               { text: 'NVIDIA Vera Rubin + LPX', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' },
+              { text: 'NVIDIA Rubin R200', link: '/zh/machine-learning/inference/nvidia-rubin-r200' },
+              { text: 'Prefill/Decode 解耦与 Mooncake', link: '/zh/machine-learning/inference/prefill-decode-disaggregation-mooncake' },
               { text: 'vLLM 与 PagedAttention', link: '/zh/machine-learning/inference/vllm-pagedattention' },
               { text: 'vLLM 源码拆解', link: '/zh/machine-learning/inference/vllm-codebase' }
             ]

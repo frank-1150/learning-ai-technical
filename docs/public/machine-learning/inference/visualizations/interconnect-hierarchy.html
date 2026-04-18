@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NVIDIA 三层互联层级</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --dim: #a6adc8;
+    --surface: #181825; --border: #45475a;
+    --up: #a6e3a1;       /* scale-up */
+    --out: #89b4fa;      /* scale-out */
+    --across: #cba6f7;   /* scale-across */
+    --gpu: #f9e2af;
+    --up-fade: rgba(166,227,161,0.12);
+    --out-fade: rgba(137,180,250,0.10);
+    --across-fade: rgba(203,166,247,0.08);
+    --panel: #181825;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --dim: #6c6f85;
+    --surface: #e6e9ef; --border: #ccd0da;
+    --up: #40a02b;
+    --out: #1e66f5;
+    --across: #8839ef;
+    --gpu: #df8e1d;
+    --up-fade: rgba(64,160,43,0.12);
+    --out-fade: rgba(30,102,245,0.10);
+    --across-fade: rgba(136,57,239,0.10);
+    --panel: #e6e9ef;
+  }
+  body {
+    font-family: -apple-system, 'SF Pro Text', 'Inter', sans-serif;
+    background: var(--bg); color: var(--fg); padding: 20px;
+    transition: background 0.3s, color 0.3s; font-size: 13px;
+  }
+  .container { max-width: 940px; margin: 0 auto; }
+  .header { margin-bottom: 12px; }
+  .title { font-size: 15px; font-weight: 600; }
+  .subtitle { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .layout { display: grid; grid-template-columns: 1fr 290px; gap: 18px; }
+  .diagram-wrap svg { width: 100%; height: auto; display: block; }
+  .tier { cursor: pointer; transition: opacity 0.2s; }
+  .tier:hover .tier-border { stroke-width: 3; }
+  .tier.dim { opacity: 0.38; }
+  .tier-label {
+    font-family: -apple-system, 'SF Pro Text', sans-serif;
+    font-weight: 600; pointer-events: none;
+  }
+  .tier-sub {
+    font-family: -apple-system, sans-serif;
+    font-size: 10px; pointer-events: none;
+  }
+  .gpu-dot { cursor: default; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px;
+  }
+  .panel-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .panel-swatch { width: 12px; height: 12px; border-radius: 2px; }
+  .panel-row { margin-bottom: 8px; font-size: 12px; line-height: 1.5; }
+  .panel-key { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .panel-val { color: var(--fg); margin-top: 2px; }
+  .panel-list { list-style: none; padding-left: 0; margin-top: 2px; }
+  .panel-list li { padding: 2px 0; font-family: 'SF Mono', monospace; font-size: 11px; }
+  .panel-list li::before { content: '· '; color: var(--muted); }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 10px; text-align: center; }
+
+  @media (max-width: 780px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="title">NVIDIA 三层互联层级：Scale-up / Scale-out / Scale-across</div>
+    <div class="subtitle">点击各层查看对应的 NVIDIA 产品、带宽、延迟和典型 workload</div>
+  </div>
+
+  <div class="layout">
+    <div class="diagram-wrap" id="diagram"></div>
+    <div class="panel" id="panel"></div>
+  </div>
+
+  <div class="hint">外层 → 内层：延迟下降、带宽上升、距离变短、成本/比特下降</div>
+</div>
+
+<script>
+const W = 620, H = 400;
+
+const TIERS = {
+  across: {
+    name: 'Scale-across',
+    color: '--across',
+    bandwidth: '数十~数百 Gbps',
+    latency: 'ms 级',
+    range: '跨数据中心（全球）',
+    products: ['Spectrum-XGS', 'Omniverse 网络编排'],
+    tech: 'Giga-Scale 跨站点拓扑，大时延容忍 RDMA + 遥测路由',
+    workloads: ['超大规模基础模型训练', '全球推理负载均衡', '灾备与合规隔离'],
+  },
+  out: {
+    name: 'Scale-out',
+    color: '--out',
+    bandwidth: '800 Gbps per link',
+    latency: 'μs 级',
+    range: '单数据中心（千~万 GPU）',
+    products: ['Spectrum-6 SN6800', 'Quantum-X800 IB', 'ConnectX-9 NIC', 'BlueField-4 DPU'],
+    tech: '以太网/InfiniBand + CPO 共封装光学，每端口功耗降 5x',
+    workloads: ['Data Parallel 训练', 'P/D 解耦 KV 传输（Mooncake）', 'RAG 向量库访问'],
+  },
+  up: {
+    name: 'Scale-up',
+    color: '--up',
+    bandwidth: '3.6 TB/s per GPU',
+    latency: '~100 ns',
+    range: '单机柜内（72 GPU）',
+    products: ['NVLink 6', 'NVLink Switch', 'NVL72 机柜', 'NVLink-C2C (CPU↔GPU)'],
+    tech: 'NVHS 物理层，铜缆传输，共享内存语义',
+    workloads: ['张量并行 (Tensor Parallel)', 'MoE 专家并行 all-to-all', 'P/D Prefill 节点内部'],
+  },
+};
+
+const ns = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, text) {
+  const e = document.createElementNS(ns, tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function cv(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+
+// Geometry
+const across = { x: 10, y: 10, w: W - 20, h: H - 20 };
+const outA   = { x: 30, y: 50, w: 270, h: 320 };
+const outB   = { x: 320, y: 50, w: 270, h: 320 };
+const upA1   = { x: 45,  y: 95,  w: 240, h: 120 };
+const upA2   = { x: 45,  y: 235, w: 240, h: 120 };
+const upB1   = { x: 335, y: 95,  w: 240, h: 120 };
+const upB2   = { x: 335, y: 235, w: 240, h: 120 };
+
+function drawRect(svg, r, cVar, label, sub, tierKey, isRoot) {
+  const fadeVar = cVar === '--up' ? '--up-fade' : cVar === '--out' ? '--out-fade' : '--across-fade';
+  const g = el('g', { class: 'tier', 'data-tier': tierKey });
+  g.appendChild(el('rect', {
+    x: r.x, y: r.y, width: r.w, height: r.h, rx: 10,
+    fill: cv(fadeVar),
+    stroke: cv(cVar), 'stroke-width': 2,
+    class: 'tier-border',
+  }));
+  const t = el('text', {
+    x: r.x + 12, y: r.y + 18,
+    fill: cv(cVar), 'font-size': 12, class: 'tier-label',
+  });
+  t.textContent = label;
+  g.appendChild(t);
+  if (sub) {
+    const st = el('text', {
+      x: r.x + 12, y: r.y + 32,
+      fill: cv('--muted'), 'font-size': 10, class: 'tier-sub',
+    });
+    st.textContent = sub;
+    g.appendChild(st);
+  }
+  svg.appendChild(g);
+  return g;
+}
+
+function drawGpus(svg, r) {
+  // 6 cols x 4 rows = 24 dots (schematic)
+  const marginX = 14, marginY = 46;
+  const cols = 12, rows = 3;
+  const cellW = (r.w - marginX * 2) / cols;
+  const cellH = (r.h - marginY - 14) / rows;
+  for (let ry = 0; ry < rows; ry++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const dot = el('circle', {
+        cx: r.x + marginX + cellW * cx + cellW / 2,
+        cy: r.y + marginY + cellH * ry + cellH / 2,
+        r: 3.2, fill: cv('--gpu'), class: 'gpu-dot',
+      });
+      svg.appendChild(dot);
+    }
+  }
+  const lbl = el('text', {
+    x: r.x + r.w / 2, y: r.y + r.h - 6,
+    fill: cv('--muted'), 'font-size': 9, 'text-anchor': 'middle',
+  });
+  lbl.textContent = '72 × GPU (示意)';
+  svg.appendChild(lbl);
+}
+
+function drawInterDcLink(svg) {
+  const y = H / 2;
+  const x1 = outA.x + outA.w, x2 = outB.x;
+  const path = el('path', {
+    d: `M ${x1} ${y} C ${x1 + 8} ${y}, ${x2 - 8} ${y}, ${x2} ${y}`,
+    stroke: cv('--across'), 'stroke-width': 1.5, 'stroke-dasharray': '4 3',
+    fill: 'none',
+  });
+  svg.appendChild(path);
+}
+
+let currentTier = 'up';
+
+function rebuild() {
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
+
+  const gAcross = drawRect(svg, across, '--across', 'Scale-across · 跨数据中心', 'Spectrum-XGS · ms 级 · 数百 Gbps', 'across', true);
+
+  const gOutA = drawRect(svg, outA, '--out', 'Scale-out · DC-A', 'Spectrum-X + BlueField-4', 'out');
+  const gOutB = drawRect(svg, outB, '--out', 'Scale-out · DC-B', 'Quantum-X (InfiniBand)', 'out');
+
+  const gUp1 = drawRect(svg, upA1, '--up', 'NVL72', 'NVLink 6 · 3.6 TB/s/GPU', 'up');
+  const gUp2 = drawRect(svg, upA2, '--up', 'NVL72', 'NVLink 6 · 3.6 TB/s/GPU', 'up');
+  const gUp3 = drawRect(svg, upB1, '--up', 'NVL72', 'NVLink 6 · 3.6 TB/s/GPU', 'up');
+  const gUp4 = drawRect(svg, upB2, '--up', 'NVL72', 'NVLink 6 · 3.6 TB/s/GPU', 'up');
+
+  [upA1, upA2, upB1, upB2].forEach(r => drawGpus(svg, r));
+
+  drawInterDcLink(svg);
+
+  const wrap = document.getElementById('diagram');
+  wrap.innerHTML = '';
+  wrap.appendChild(svg);
+
+  svg.querySelectorAll('.tier').forEach(g => {
+    g.addEventListener('click', () => {
+      currentTier = g.dataset.tier;
+      updateHighlight(svg);
+      renderPanel();
+    });
+  });
+  updateHighlight(svg);
+  renderPanel();
+}
+
+function updateHighlight(svg) {
+  svg.querySelectorAll('.tier').forEach(g => {
+    if (g.dataset.tier === currentTier) g.classList.remove('dim');
+    else g.classList.add('dim');
+  });
+}
+
+function renderPanel() {
+  const t = TIERS[currentTier];
+  const panel = document.getElementById('panel');
+  panel.innerHTML = `
+    <div class="panel-title">
+      <span class="panel-swatch" style="background:${cv(t.color)}"></span>
+      ${t.name}
+    </div>
+    <div class="panel-row">
+      <div class="panel-key">范围</div>
+      <div class="panel-val">${t.range}</div>
+    </div>
+    <div class="panel-row">
+      <div class="panel-key">带宽 / 延迟</div>
+      <div class="panel-val">${t.bandwidth} · ${t.latency}</div>
+    </div>
+    <div class="panel-row">
+      <div class="panel-key">NVIDIA 产品</div>
+      <ul class="panel-list">
+        ${t.products.map(p => `<li>${p}</li>`).join('')}
+      </ul>
+    </div>
+    <div class="panel-row">
+      <div class="panel-key">关键技术</div>
+      <div class="panel-val" style="font-size:11px">${t.tech}</div>
+    </div>
+    <div class="panel-row">
+      <div class="panel-key">适用 workload</div>
+      <ul class="panel-list">
+        ${t.workloads.map(w => `<li>${w}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+// Theme sync — MUST be last
+function syncTheme() {
+  try {
+    const isDark = window.parent.document.documentElement.classList.contains('dark');
+    document.body.classList.toggle('light', !isDark);
+  } catch(e) {}
+  rebuild();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>
