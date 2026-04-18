@@ -65,7 +65,8 @@ function nav(): DefaultTheme.NavItem[] {
       text: '技术书籍阅读',
       items: [
         { text: 'Kubernetes in Action', link: '/zh/book-notes/kubernetes-in-action/' },
-        { text: 'Designing Distributed Systems', link: '/zh/book-notes/designing-distributed-systems/' }
+        { text: 'Designing Distributed Systems', link: '/zh/book-notes/designing-distributed-systems/' },
+        { text: 'Hands-On Large Language Models', link: '/zh/book-notes/hands-on-llm/' }
       ]
     }
   ]
@@ -168,6 +169,23 @@ function sidebar(): DefaultTheme.Sidebar {
               { text: 'Part III — 服务模式', link: '/zh/book-notes/designing-distributed-systems/serving-patterns' },
               { text: 'Part IV — 批处理模式', link: '/zh/book-notes/designing-distributed-systems/batch-computational-patterns' },
               { text: 'Part V — 通用概念', link: '/zh/book-notes/designing-distributed-systems/universal-concepts' }
+            ]
+          },
+          {
+            text: 'Hands-On Large Language Models',
+            collapsed: false,
+            items: [
+              { text: '书籍总览', link: '/zh/book-notes/hands-on-llm/' },
+              { text: 'Ch1 LLM 基础与简史', link: '/zh/book-notes/hands-on-llm/intro-and-history' },
+              { text: 'Ch2 Tokens 与 Embeddings', link: '/zh/book-notes/hands-on-llm/tokens-embeddings' },
+              { text: 'Ch3 Transformer 架构内部', link: '/zh/book-notes/hands-on-llm/transformer-internals' },
+              { text: 'Ch4-5 文本分类与聚类', link: '/zh/book-notes/hands-on-llm/classification-clustering' },
+              { text: 'Ch6 Prompt Engineering 与推理技巧', link: '/zh/book-notes/hands-on-llm/prompt-engineering' },
+              { text: 'Ch7 LangChain 链、记忆与 Agent', link: '/zh/book-notes/hands-on-llm/langchain-chains-agents' },
+              { text: 'Ch8 语义搜索与 RAG', link: '/zh/book-notes/hands-on-llm/semantic-search-rag' },
+              { text: 'Ch9 多模态大模型', link: '/zh/book-notes/hands-on-llm/multimodal-llms' },
+              { text: 'Ch10-11 训练 Embedding 与微调表示模型', link: '/zh/book-notes/hands-on-llm/embedding-representation-training' },
+              { text: 'Ch12 微调生成模型 SFT/LoRA/DPO', link: '/zh/book-notes/hands-on-llm/fine-tuning-generation' }
             ]
           }
         ]

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>检索评估指标交互计算</title>
+<style>
+:root {
+  --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+  --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+  --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387
+}
+.light {
+  --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+  --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+  --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  padding: 14px;
+  min-height: 100vh;
+}
+h2 { font-size: 15px; font-weight: 600; margin-bottom: 3px; }
+.subtitle { color: var(--muted); font-size: 11px; margin-bottom: 14px; }
+
+.controls {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.control-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.control-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.k-buttons { display: flex; gap: 4px; }
+.k-btn {
+  background: var(--overlay);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.k-btn.active {
+  background: var(--blue);
+  color: var(--bg);
+  border-color: var(--blue);
+}
+.preset-select {
+  background: var(--overlay);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+}
+
+.main-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 820px) {
+  .main-grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.panel-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.results-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.results-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.results-table tr.out-of-k {
+  opacity: 0.4;
+}
+.results-table tr.out-of-k td {
+  text-decoration: line-through;
+}
+.rel-mark {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  text-align: center;
+  line-height: 16px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.rel-0 { background: color-mix(in srgb, var(--red) 20%, var(--overlay)); color: var(--red); }
+.rel-1 { background: color-mix(in srgb, var(--yellow) 20%, var(--overlay)); color: var(--yellow); }
+.rel-2 { background: color-mix(in srgb, var(--peach) 25%, var(--overlay)); color: var(--peach); }
+.rel-3 { background: color-mix(in srgb, var(--green) 25%, var(--overlay)); color: var(--green); }
+.rank-cell { color: var(--muted); font-size: 10px; width: 30px; }
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.metric-card {
+  background: var(--overlay);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+.metric-name {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+.metric-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--fg);
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.metric-value .denom { color: var(--muted); font-size: 14px; }
+.metric-formula {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+  font-family: inherit;
+}
+.metric-formula .calc {
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  font-size: 10px;
+  color: var(--muted);
+}
+.legend-item { display: flex; align-items: center; gap: 4px; }
+</style>
+</head>
+<body>
+
+<h2>检索评估指标交互计算</h2>
+<p class="subtitle">同一组检索结果在不同 K 值下的 Recall@K / Precision@K / MRR / nDCG@K</p>
+
+<div class="controls">
+  <div class="control-group">
+    <span class="control-label">Preset:</span>
+    <select class="preset-select" id="preset">
+      <option value="good">System A (好: 相关结果排前)</option>
+      <option value="mediocre">System B (一般: 错开排序)</option>
+      <option value="bad">System C (差: 相关结果靠后)</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <span class="control-label">K = </span>
+    <div class="k-buttons" id="k-buttons">
+      <button class="k-btn" data-k="3">3</button>
+      <button class="k-btn active" data-k="5">5</button>
+      <button class="k-btn" data-k="10">10</button>
+    </div>
+  </div>
+</div>
+
+<div class="main-grid">
+  <div class="panel">
+    <div class="panel-title">检索结果（相关性标签：0=不相关, 1=勉强, 2=相关, 3=完美）</div>
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Document (检索按此顺序返回)</th>
+          <th style="text-align:center">Rel</th>
+        </tr>
+      </thead>
+      <tbody id="results-tbody"></tbody>
+    </table>
+    <div class="legend">
+      <span>总相关文档数 (in corpus): <b id="total-rel">-</b></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">在当前 K 下的指标</div>
+    <div class="metric-grid" id="metrics"></div>
+  </div>
+</div>
+
+<script>
+// ---------- Data ----------
+// Each "preset" is the same set of 5 relevant documents hidden among noise,
+// but retrieved in different orders.
+// rel: 3=perfect, 2=relevant, 1=marginally relevant, 0=not relevant.
+// Total relevant in "corpus" = 5 (treating rel>=1 as relevant).
+
+const DOCS = [
+  "The film has a worldwide gross over $677M",
+  "Astronomers praised Interstellar's scientific accuracy",
+  "Kip Thorne was a scientific consultant",
+  "The movie stars Matthew McConaughey and Anne Hathaway",
+  "Interstellar premiered on October 26, 2014",
+  "Principal photography took place in Alberta and Iceland",
+  "Hoyte van Hoytema shot on 35mm film",
+  "It uses practical and miniature effects",
+  "Christopher Nolan co-wrote the screenplay",
+  "Interstellar is a 2014 epic science fiction film"
+];
+
+// For each preset, we define "rel" score for each rank (0..9).
+// Total of 5 relevant docs (rel>=1) exist in the corpus for this query.
+const PRESETS = {
+  good:      [3, 3, 2, 0, 2, 0, 1, 0, 0, 0],  // best: high-rel at top
+  mediocre:  [2, 0, 3, 0, 1, 3, 0, 2, 0, 0],  // mixed
+  bad:       [0, 0, 0, 1, 0, 2, 3, 2, 3, 0]   // bad: relevant at bottom
+};
+const TOTAL_RELEVANT = 5;  // rel>=1 count across all presets
+
+let currentK = 5;
+let currentPreset = 'good';
+
+// ---------- Metric calcs ----------
+function isRelevant(r) { return r >= 1; }
+
+function recallAtK(rels, k) {
+  const hit = rels.slice(0, k).filter(isRelevant).length;
+  return hit / TOTAL_RELEVANT;
+}
+function precisionAtK(rels, k) {
+  const hit = rels.slice(0, k).filter(isRelevant).length;
+  return hit / k;
+}
+function mrr(rels) {
+  for (let i=0; i<rels.length; i++) {
+    if (isRelevant(rels[i])) return 1/(i+1);
+  }
+  return 0;
+}
+function dcgAtK(rels, k) {
+  let dcg = 0;
+  for (let i=0; i<Math.min(k, rels.length); i++) {
+    const r = rels[i];
+    // standard DCG: (2^rel - 1) / log2(i+2)
+    dcg += (Math.pow(2, r) - 1) / Math.log2(i + 2);
+  }
+  return dcg;
+}
+function ndcgAtK(rels, k) {
+  const ideal = [...rels].sort((a,b)=>b-a);
+  const idcg = dcgAtK(ideal, k);
+  if (idcg === 0) return 0;
+  return dcgAtK(rels, k) / idcg;
+}
+function averagePrecisionAtK(rels, k) {
+  let hits = 0, sum = 0;
+  for (let i=0; i<Math.min(k, rels.length); i++) {
+    if (isRelevant(rels[i])) {
+      hits++;
+      sum += hits / (i+1);
+    }
+  }
+  if (TOTAL_RELEVANT === 0) return 0;
+  return sum / TOTAL_RELEVANT;
+}
+
+// ---------- Render ----------
+const tbody = document.getElementById('results-tbody');
+const metricsEl = document.getElementById('metrics');
+const totalRelEl = document.getElementById('total-rel');
+const presetSelect = document.getElementById('preset');
+
+function render() {
+  const rels = PRESETS[currentPreset];
+  totalRelEl.textContent = TOTAL_RELEVANT;
+
+  // Results table
+  tbody.innerHTML = rels.map((r, i) => `
+    <tr class="${i >= currentK ? 'out-of-k' : ''}">
+      <td class="rank-cell">${i+1}</td>
+      <td>${DOCS[i]}</td>
+      <td style="text-align:center">
+        <span class="rel-mark rel-${r}">${r}</span>
+      </td>
+    </tr>
+  `).join('');
+
+  // Metrics
+  const k = currentK;
+  const rAtK = recallAtK(rels, k);
+  const pAtK = precisionAtK(rels, k);
+  const m = mrr(rels);
+  const nd = ndcgAtK(rels, k);
+  const ap = averagePrecisionAtK(rels, k);
+
+  const hitCount = rels.slice(0, k).filter(isRelevant).length;
+  const firstRelevantRank = rels.findIndex(isRelevant) + 1;
+
+  metricsEl.innerHTML = `
+    <div class="metric-card">
+      <div class="metric-name">Recall@${k}</div>
+      <div class="metric-value">${rAtK.toFixed(3)}</div>
+      <div class="metric-formula">
+        hit / total_rel<br>
+        <span class="calc">= ${hitCount} / ${TOTAL_RELEVANT}</span>
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-name">Precision@${k}</div>
+      <div class="metric-value">${pAtK.toFixed(3)}</div>
+      <div class="metric-formula">
+        hit / K<br>
+        <span class="calc">= ${hitCount} / ${k}</span>
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-name">MRR</div>
+      <div class="metric-value">${m.toFixed(3)}</div>
+      <div class="metric-formula">
+        1 / rank_of_first_hit<br>
+        <span class="calc">= 1 / ${firstRelevantRank || '∞'}</span>
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-name">nDCG@${k}</div>
+      <div class="metric-value">${nd.toFixed(3)}</div>
+      <div class="metric-formula">
+        DCG / IDCG<br>
+        <span class="calc">(graded + position decay)</span>
+      </div>
+    </div>
+    <div class="metric-card" style="grid-column: span 2">
+      <div class="metric-name">Average Precision @ ${k}</div>
+      <div class="metric-value">${ap.toFixed(3)}</div>
+      <div class="metric-formula">
+        mean of precision at every relevant-doc position<br>
+        <span class="calc">avg of MAP on multi-query = MAP</span>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- Events ----------
+document.querySelectorAll('.k-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.k-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentK = parseInt(btn.dataset.k, 10);
+    render();
+  });
+});
+presetSelect.addEventListener('change', e => {
+  currentPreset = e.target.value;
+  render();
+});
+
+// ---------- Theme sync (LAST) ----------
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+
+</body>
+</html>

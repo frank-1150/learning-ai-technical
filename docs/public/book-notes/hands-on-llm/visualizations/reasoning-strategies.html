@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>四种推理策略对比</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #6c7086;
+  --surface: #181825;
+  --border: #45475a;
+  --overlay: #313244;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --blue: #89b4fa;
+  --yellow: #f9e2af;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+  --teal: #94e2d5;
+  --sky: #89dceb;
+}
+.light {
+  --bg: #eff1f5;
+  --fg: #4c4f69;
+  --muted: #8c8fa1;
+  --surface: #e6e9ef;
+  --border: #ccd0da;
+  --overlay: #dce0e8;
+  --green: #40a02b;
+  --red: #d20f39;
+  --blue: #1e66f5;
+  --yellow: #df8e1d;
+  --mauve: #8839ef;
+  --peach: #fe640b;
+  --teal: #179299;
+  --sky: #04a5e5;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  padding: 16px;
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 14px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.question {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.question b { color: var(--fg); font-weight: 600; }
+
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+button {
+  background: var(--overlay);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+button:hover { background: var(--surface); border-color: var(--blue); }
+button.primary { background: var(--blue); color: var(--bg); border-color: var(--blue); }
+button.primary:hover { opacity: 0.85; }
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 1100px) { .grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px)  { .grid { grid-template-columns: 1fr; } }
+
+.col {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 540px;
+}
+
+.col-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--overlay);
+}
+
+.col-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.col-sub {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.col-body {
+  padding: 10px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.step {
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  border-left: 2px solid var(--border);
+  background: var(--overlay);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.step.show { opacity: 1; transform: translateY(0); }
+
+.step.thought { border-left-color: var(--mauve); }
+.step.answer-good { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 10%, var(--overlay)); }
+.step.answer-bad { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 10%, var(--overlay)); }
+.step.vote { border-left-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 10%, var(--overlay)); }
+.step.prune { border-left-color: var(--red); opacity: 0.35; text-decoration: line-through; }
+.step.prune.show { opacity: 0.35; }
+
+.step-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.branches {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.branches .step { font-size: 10px; padding: 4px 6px; }
+
+.stats {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  font-size: 10px;
+}
+
+.stat-label { color: var(--muted); }
+.stat-value { text-align: right; font-weight: 600; }
+.stat-value.good { color: var(--green); }
+.stat-value.warn { color: var(--yellow); }
+.stat-value.bad  { color: var(--red); }
+
+.final-answer {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--blue) 15%, var(--overlay));
+  border-left: 2px solid var(--blue);
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.final-answer.bad {
+  background: color-mix(in srgb, var(--red) 15%, var(--overlay));
+  border-left-color: var(--red);
+  color: var(--red);
+}
+
+.legend {
+  margin-top: 12px;
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>四种推理策略对比</h1>
+    <div class="question">
+      题目：<b>The cafeteria had 23 apples. They used 20 for lunch and bought 6 more. How many apples now?</b>（正确答案：9）
+    </div>
+  </div>
+  <div class="controls">
+    <button id="btn-replay" class="primary">▶ 重放推理</button>
+    <button id="btn-fast">⏭ 跳到结尾</button>
+  </div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="legend">
+  <div class="legend-item"><span class="legend-dot" style="background: var(--mauve)"></span>中间思考</div>
+  <div class="legend-item"><span class="legend-dot" style="background: var(--green)"></span>正确候选</div>
+  <div class="legend-item"><span class="legend-dot" style="background: var(--red)"></span>错误候选 / 剪枝</div>
+  <div class="legend-item"><span class="legend-dot" style="background: var(--yellow)"></span>投票 / 评估</div>
+  <div class="legend-item"><span class="legend-dot" style="background: var(--blue)"></span>最终输出</div>
+</div>
+
+<script>
+// 1. Data -------------------------------------------------------------------
+
+const strategies = [
+  {
+    id: 'standard',
+    title: 'Standard Prompt',
+    sub: '直接问，直接答',
+    steps: [
+      { type: 'answer-bad', label: 'Final', text: 'The answer is 27.' }
+    ],
+    final: { text: '27 (错)', bad: true },
+    stats: {
+      calls: '1 次',
+      tokens: '~30',
+      cost: '1×',
+      acc: '低',
+    },
+    accCls: 'bad',
+  },
+  {
+    id: 'cot',
+    title: 'Chain-of-Thought',
+    sub: '先推理，再回答',
+    steps: [
+      { type: 'thought', label: 'Step 1', text: 'Start with 23 apples.' },
+      { type: 'thought', label: 'Step 2', text: '23 - 20 = 3 apples left after lunch.' },
+      { type: 'thought', label: 'Step 3', text: '3 + 6 = 9 apples after restock.' },
+      { type: 'answer-good', label: 'Final', text: 'The answer is 9.' }
+    ],
+    final: { text: '9 (对)', bad: false },
+    stats: {
+      calls: '1 次',
+      tokens: '~120',
+      cost: '~4×',
+      acc: '中高',
+    },
+    accCls: 'warn',
+  },
+  {
+    id: 'self-consistency',
+    title: 'Self-Consistency',
+    sub: '跑 N 次，多数投票',
+    steps: [
+      { type: 'thought', label: 'Chain 1', text: '23 - 20 = 3, +6 = 9 → answer 9' },
+      { type: 'thought', label: 'Chain 2', text: '23 + 6 - 20 = 9 → answer 9' },
+      { type: 'thought', label: 'Chain 3', text: '20 - 6 = 14, 23 - 14 = 9 → answer 9' },
+      { type: 'answer-bad', label: 'Chain 4', text: '23 - (20 + 6) = -3, take |-3| = 3 → answer 3' },
+      { type: 'thought', label: 'Chain 5', text: '23 - 20 + 6 = 9 → answer 9' },
+      { type: 'vote', label: 'Vote', text: '9 × 4 票 · 3 × 1 票 → 多数票 9' }
+    ],
+    final: { text: '9 (对)', bad: false },
+    stats: {
+      calls: '5 次',
+      tokens: '~600',
+      cost: '~20×',
+      acc: '高',
+    },
+    accCls: 'good',
+  },
+  {
+    id: 'tot',
+    title: 'Tree-of-Thought',
+    sub: '每步分支评估再展开',
+    steps: [
+      { type: 'thought', label: 'Root', text: '要算 lunch 后还剩多少，再加上购买。' },
+      { type: 'branches', label: 'Step 1 branches', items: [
+        { type: 'thought', text: 'Branch A: 23 - 20 = 3' },
+        { type: 'prune', text: 'Branch B: 23 - 26 = -3' }
+      ]},
+      { type: 'vote', label: 'Eval', text: 'A 更合理，保留 A；B 负数剪枝。' },
+      { type: 'branches', label: 'Step 2 branches', items: [
+        { type: 'thought', text: 'A1: 3 + 6 = 9' },
+        { type: 'prune', text: 'A2: 3 × 6 = 18' }
+      ]},
+      { type: 'vote', label: 'Eval', text: 'A1 对应"bought more"语义，选 A1。' },
+      { type: 'answer-good', label: 'Final', text: 'The answer is 9.' }
+    ],
+    final: { text: '9 (对)', bad: false },
+    stats: {
+      calls: '真 ToT: 8–15 次 / prompt-only: 1 次',
+      tokens: '~400',
+      cost: '~15× / ~5×',
+      acc: '高（规划类任务显著）',
+    },
+    accCls: 'good',
+  }
+];
+
+// 2. Render -----------------------------------------------------------------
+
+const grid = document.getElementById('grid');
+
+function statValueClass(key, accCls) {
+  if (key === 'acc') return accCls;
+  return '';
+}
+
+function buildCol(s) {
+  const col = document.createElement('div');
+  col.className = 'col';
+  col.dataset.id = s.id;
+
+  let stepsHtml = '';
+  s.steps.forEach((step, i) => {
+    if (step.type === 'branches') {
+      let items = '';
+      step.items.forEach(it => {
+        items += `<div class="step ${it.type}" data-idx="${i}"><div>${it.text}</div></div>`;
+      });
+      stepsHtml += `
+        <div>
+          <div class="step-label">${step.label}</div>
+          <div class="branches">${items}</div>
+        </div>`;
+    } else {
+      stepsHtml += `
+        <div class="step ${step.type}" data-idx="${i}">
+          <div class="step-label">${step.label}</div>
+          <div>${step.text}</div>
+        </div>`;
+    }
+  });
+
+  col.innerHTML = `
+    <div class="col-header">
+      <div class="col-title">${s.title}</div>
+      <div class="col-sub">${s.sub}</div>
+    </div>
+    <div class="col-body">
+      ${stepsHtml}
+      <div class="final-answer ${s.final.bad ? 'bad' : ''}" data-final="1" style="opacity:0">
+        最终输出：${s.final.text}
+      </div>
+      <div class="stats">
+        <div class="stat-label">API 调用</div><div class="stat-value">${s.stats.calls}</div>
+        <div class="stat-label">生成 token</div><div class="stat-value">${s.stats.tokens}</div>
+        <div class="stat-label">相对成本</div><div class="stat-value">${s.stats.cost}</div>
+        <div class="stat-label">预期准确率</div><div class="stat-value ${s.accCls}">${s.stats.acc}</div>
+      </div>
+    </div>
+  `;
+  return col;
+}
+
+function render() {
+  grid.innerHTML = '';
+  strategies.forEach(s => grid.appendChild(buildCol(s)));
+}
+
+// 3. Animation --------------------------------------------------------------
+
+let timers = [];
+
+function clearTimers() {
+  timers.forEach(t => clearTimeout(t));
+  timers = [];
+}
+
+function animate(fast) {
+  clearTimers();
+  const cols = grid.querySelectorAll('.col');
+  cols.forEach((col, ci) => {
+    // Reset
+    col.querySelectorAll('.step').forEach(el => el.classList.remove('show'));
+    const finalEl = col.querySelector('[data-final]');
+    if (finalEl) finalEl.style.opacity = '0';
+
+    const stepsInCol = col.querySelectorAll('.col-body .step');
+    const delayBase = fast ? 0 : 400;
+
+    stepsInCol.forEach((el, si) => {
+      const t = setTimeout(() => {
+        el.classList.add('show');
+      }, delayBase * (si + 1));
+      timers.push(t);
+    });
+
+    const finalDelay = fast ? 50 : delayBase * (stepsInCol.length + 1);
+    if (finalEl) {
+      const t = setTimeout(() => {
+        finalEl.style.opacity = '1';
+      }, finalDelay);
+      timers.push(t);
+    }
+  });
+}
+
+// 4. Theme sync & init ------------------------------------------------------
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+  animate(false);
+}
+
+document.getElementById('btn-replay').addEventListener('click', () => animate(false));
+document.getElementById('btn-fast').addEventListener('click', () => animate(true));
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

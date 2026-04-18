@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<title>注意力变体对比：MHA / GQA / MQA</title>
+<style>
+  :root { --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+          --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+          --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387 }
+  .light { --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+           --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+           --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--fg);
+               font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+               font-size: 13px; }
+  .wrap { padding: 18px; }
+  h3 { margin: 0 0 4px; color: var(--mauve); font-size: 15px; }
+  .sub { color: var(--muted); margin-bottom: 14px; font-size: 12px; }
+  .tabs { display:flex; gap:6px; margin-bottom: 14px; }
+  .tab { background: var(--overlay); color: var(--fg); border: 1px solid var(--border);
+         padding: 6px 14px; border-radius: 6px; cursor: pointer;
+         font-family: inherit; font-size: 12px; }
+  .tab:hover { border-color: var(--blue); color: var(--blue); }
+  .tab.active { background: var(--blue); color: var(--bg); border-color: var(--blue); font-weight: bold; }
+  .panels { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+  .panel { border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+           background: var(--surface); }
+  .panel h4 { margin: 0 0 10px; color: var(--yellow); font-size: 13px; }
+  .heads-container { display:flex; gap: 10px; align-items: flex-end; justify-content:center;
+                     min-height: 200px; padding: 10px 0; }
+  .head-stack { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .head-stack .label-top { color: var(--muted); font-size: 10px; margin-bottom: 4px; }
+  .head-rect { width: 22px; border-radius: 3px; display:flex; align-items:flex-end;
+               justify-content:center; font-size:9px; font-weight:bold;
+               transition: all 0.4s ease; }
+  .head-rect.q { background: var(--mauve); height: 50px; color: var(--bg); }
+  .head-rect.k { background: var(--yellow); height: 50px; color: var(--bg); }
+  .head-rect.v { background: var(--blue); height: 50px; color: var(--bg); }
+  .head-group { display:flex; flex-direction: column; gap: 4px; align-items: center;
+                padding: 6px; border: 1px dashed var(--border); border-radius: 5px;
+                background: color-mix(in srgb, var(--overlay) 50%, transparent); }
+  .head-group .group-label { font-size: 9px; color: var(--muted); margin-top: 2px; }
+  .row-label { color: var(--muted); font-size: 11px; writing-mode: vertical-rl;
+               transform: rotate(180deg); text-align: center; padding: 0 6px; }
+  .share-box { border: 1px dashed var(--border); border-radius: 5px; padding: 4px;
+               background: color-mix(in srgb, var(--overlay) 50%, transparent); }
+  .connections { font-size: 10px; color: var(--muted); text-align: center; margin-top: 4px; }
+
+  .stats-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .stats-table th, .stats-table td { padding: 6px 8px; text-align: left;
+                                     border-bottom: 1px solid var(--border); }
+  .stats-table th { color: var(--muted); font-weight: normal; font-size: 10px;
+                    text-transform: uppercase; }
+  .stats-table td { color: var(--fg); }
+  .stats-table td.hl { color: var(--green); font-weight: bold; }
+  .formula { background: var(--overlay); padding: 10px; border-radius: 6px;
+             margin: 10px 0; font-size: 11px; color: var(--fg); line-height: 1.6; }
+  .formula .c { color: var(--yellow); }
+  .formula .b { color: var(--blue); }
+  .formula .m { color: var(--mauve); }
+  .legend { display: flex; gap: 14px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:4px; }
+  .legend .sw { width: 12px; height: 12px; border-radius: 2px; }
+  .note { margin-top: 12px; padding: 10px; background: var(--surface);
+          border: 1px solid var(--border); border-radius: 6px;
+          color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .note b { color: var(--fg); }
+
+  .model-pick { margin-top: 14px; padding: 10px; background: var(--overlay);
+                border-radius: 6px; font-size: 11px; color: var(--fg); }
+  .model-pick b { color: var(--peach); }
+  .big-num { font-size: 24px; color: var(--green); font-weight: bold; margin: 6px 0; }
+  .big-num.red { color: var(--red); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h3>注意力变体对比：MHA / GQA / MQA</h3>
+  <div class="sub">三种注意力通过"减少 K/V 头数量"压缩 KV Cache，代表三种不同的质量 / 显存权衡</div>
+
+  <div class="tabs">
+    <button class="tab active" data-kind="mha">Multi-Head (MHA)</button>
+    <button class="tab" data-kind="gqa">Grouped-Query (GQA)</button>
+    <button class="tab" data-kind="mqa">Multi-Query (MQA)</button>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <h4 id="diagTitle">结构图</h4>
+      <div class="heads-container" id="headsContainer"></div>
+      <div class="connections" id="connectionsText">—</div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--mauve)"></span> Query Head</span>
+        <span><span class="sw" style="background:var(--yellow)"></span> Key Head</span>
+        <span><span class="sw" style="background:var(--blue)"></span> Value Head</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h4>KV Cache 公式与实例</h4>
+      <div class="formula" id="formulaBox">—</div>
+
+      <table class="stats-table">
+        <tr>
+          <th>指标</th>
+          <th>值</th>
+        </tr>
+        <tr><td>Query 头数</td><td id="statQ">—</td></tr>
+        <tr><td>K/V 头数</td><td id="statKV">—</td></tr>
+        <tr><td>每 token KV 大小（Llama-3-70B 规格）</td><td id="statPerTok">—</td></tr>
+        <tr><td>相对 MHA 的 KV 开销</td><td class="hl" id="statRatio">—</td></tr>
+      </table>
+
+      <div class="model-pick" id="modelPick">—</div>
+    </div>
+  </div>
+
+  <div class="note" id="noteBox">—</div>
+</div>
+
+<script>
+// ---- Data ----
+// Using Llama-3-70B concrete dimensions for the stats comparison
+const N_LAYERS = 80;
+const HEAD_DIM = 128;
+const DTYPE_BYTES = 2; // fp16
+const TOTAL_HEADS = 64; // number of query heads
+
+const variants = {
+  mha: {
+    title: 'Multi-Head Attention',
+    qHeads: 8,
+    kvHeads: 8,   // every Q head has its own K/V
+    groupSize: 1,
+    desc: '每个 Q head 配一份独立的 K 和 V，经典 Transformer 的默认设置。',
+    models: 'GPT-2、GPT-3、原始 Transformer、BERT',
+    formula: (
+      '<span class="c">KV Cache</span> = 2 × n_layers × <b class="m">n_kv_heads</b> × head_dim × seq_len × dtype<br>' +
+      '<span class="c">Llama-3-70B 规格（若用 MHA）</span>：2 × 80 × <b class="m">64</b> × 128 × 2 = <b>2.6 MB / token</b>'
+    ),
+    llamaTokBytes: 2 * N_LAYERS * TOTAL_HEADS * HEAD_DIM * DTYPE_BYTES, // with full MHA
+    note: '<b>优点：</b>每个 Q head 有独立的 K/V 视角，模型容量最大。<br><b>缺点：</b>KV Cache 随头数线性增大，长上下文显存吃紧。'
+  },
+  gqa: {
+    title: 'Grouped-Query Attention',
+    qHeads: 8,
+    kvHeads: 2,    // 2 groups, each shared by 4 Q heads
+    groupSize: 4,
+    desc: '把 Q head 分组，每组共享一份 K / V。折中方案：质量几乎无损，KV 缓存缩小。',
+    models: '<b>Llama 2 / 3、Mistral、Phi-3、Qwen、DeepSeek</b>',
+    formula: (
+      '<span class="c">KV Cache</span> = 2 × n_layers × <b class="m">n_kv_heads (< n_q_heads)</b> × head_dim × seq_len × dtype<br>' +
+      '<span class="c">Llama-3-70B 实际规格</span>（n_kv_heads=8, n_q_heads=64）：<br>' +
+      '2 × 80 × <b class="m">8</b> × 128 × 2 = <b>0.31 MB / token</b>（MHA 的 1/8）'
+    ),
+    // Llama-3-70B: 64 q_heads, 8 kv_heads, 80 layers, head_dim=128, fp16
+    llamaTokBytes: 2 * N_LAYERS * 8 * HEAD_DIM * DTYPE_BYTES,
+    note: '<b>优点：</b>KV Cache 显著减小，质量几乎不掉；推理吞吐大幅提升。<br><b>缺点：</b>仍比 MQA 多一些 K/V。这是当前主流开源模型的默认选择。'
+  },
+  mqa: {
+    title: 'Multi-Query Attention',
+    qHeads: 8,
+    kvHeads: 1,    // all Q heads share 1 K/V
+    groupSize: 8,
+    desc: '所有 Q head 共享唯一的一份 K/V。KV Cache 最小，但模型容量瓶颈最窄。',
+    models: 'PaLM、Falcon',
+    formula: (
+      '<span class="c">KV Cache</span> = 2 × n_layers × <b class="m">1</b> × head_dim × seq_len × dtype<br>' +
+      '<span class="c">Llama-3-70B 规格（若用 MQA）</span>：2 × 80 × <b class="m">1</b> × 128 × 2 = <b>0.04 MB / token</b>（MHA 的 1/64）'
+    ),
+    llamaTokBytes: 2 * N_LAYERS * 1 * HEAD_DIM * DTYPE_BYTES,
+    note: '<b>优点：</b>KV Cache 极小，长上下文推理非常快。<br><b>缺点：</b>信息瓶颈窄，模型质量明显下滑。被 GQA 取代的核心原因。'
+  }
+};
+
+// ---- DOM ----
+const headsContainer = document.getElementById('headsContainer');
+const connectionsText = document.getElementById('connectionsText');
+const diagTitle = document.getElementById('diagTitle');
+const formulaBox = document.getElementById('formulaBox');
+const statQ = document.getElementById('statQ');
+const statKV = document.getElementById('statKV');
+const statPerTok = document.getElementById('statPerTok');
+const statRatio = document.getElementById('statRatio');
+const modelPick = document.getElementById('modelPick');
+const noteBox = document.getElementById('noteBox');
+const tabs = document.querySelectorAll('.tab');
+
+let currentKind = 'mha';
+
+// ---- Pure functions ----
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024*1024)).toFixed(2) + ' MB';
+}
+
+function renderDiagram(kind) {
+  const v = variants[kind];
+  headsContainer.innerHTML = '';
+
+  // Query row (always qHeads number, grouped by groupSize)
+  const qRow = document.createElement('div');
+  qRow.style.display = 'flex';
+  qRow.style.flexDirection = 'column';
+  qRow.style.gap = '14px';
+
+  // Build q groups
+  const qGroupsWrap = document.createElement('div');
+  qGroupsWrap.style.display = 'flex';
+  qGroupsWrap.style.gap = '10px';
+  qGroupsWrap.style.alignItems = 'center';
+
+  const labelQ = document.createElement('div');
+  labelQ.className = 'row-label';
+  labelQ.textContent = 'Queries';
+  qGroupsWrap.appendChild(labelQ);
+
+  for (let g = 0; g < v.kvHeads; g++) {
+    const groupWrap = document.createElement('div');
+    groupWrap.style.display = 'flex';
+    groupWrap.style.flexDirection = 'column';
+    groupWrap.style.gap = '10px';
+    groupWrap.style.alignItems = 'center';
+
+    // Q row for this group
+    const qGroup = document.createElement('div');
+    qGroup.className = 'head-group';
+    const qInner = document.createElement('div');
+    qInner.style.display = 'flex';
+    qInner.style.gap = '3px';
+    for (let i = 0; i < v.groupSize; i++) {
+      const h = document.createElement('div');
+      h.className = 'head-rect q';
+      h.textContent = 'Q';
+      qInner.appendChild(h);
+    }
+    qGroup.appendChild(qInner);
+    const ql = document.createElement('div');
+    ql.className = 'group-label';
+    ql.textContent = v.groupSize === 1 ? 'head' : `group of ${v.groupSize}`;
+    qGroup.appendChild(ql);
+    groupWrap.appendChild(qGroup);
+
+    // K + V (shared per group)
+    const kvShared = document.createElement('div');
+    kvShared.className = 'share-box';
+    const kvInner = document.createElement('div');
+    kvInner.style.display = 'flex';
+    kvInner.style.gap = '3px';
+    const k = document.createElement('div');
+    k.className = 'head-rect k';
+    k.textContent = 'K';
+    const vv = document.createElement('div');
+    vv.className = 'head-rect v';
+    vv.textContent = 'V';
+    kvInner.appendChild(k);
+    kvInner.appendChild(vv);
+    kvShared.appendChild(kvInner);
+    const lbl = document.createElement('div');
+    lbl.className = 'group-label';
+    lbl.textContent = v.groupSize === 1 ? 'own K/V' : 'shared K/V';
+    kvShared.appendChild(lbl);
+    groupWrap.appendChild(kvShared);
+
+    qGroupsWrap.appendChild(groupWrap);
+  }
+
+  headsContainer.appendChild(qGroupsWrap);
+
+  diagTitle.textContent = v.title;
+  connectionsText.innerHTML =
+    v.groupSize === 1
+      ? `每个 Q head 独立持有 K/V（共 ${v.qHeads} 组）`
+      : v.kvHeads === 1
+        ? `所有 ${v.qHeads} 个 Q head 共享同一份 K/V`
+        : `${v.qHeads} 个 Q head 分为 ${v.kvHeads} 组，每组 ${v.groupSize} 个 Q 共享 K/V`;
+}
+
+function renderStats(kind) {
+  const v = variants[kind];
+  formulaBox.innerHTML = v.formula;
+  statQ.textContent = v.qHeads + ' heads（示意图）';
+  statKV.textContent = v.kvHeads + ' heads（示意图）';
+  statPerTok.textContent = fmtBytes(v.llamaTokBytes);
+  const ratio = v.llamaTokBytes / variants.mha.llamaTokBytes;
+  if (kind === 'mha') {
+    statRatio.textContent = '1.0× (基线)';
+    statRatio.className = '';
+  } else {
+    const inv = 1 / ratio;
+    statRatio.innerHTML = `${ratio.toFixed(3)}× (<b>${inv.toFixed(0)}× 压缩</b>)`;
+    statRatio.className = 'hl';
+  }
+  modelPick.innerHTML = `<b>代表模型：</b>${v.models}`;
+  noteBox.innerHTML = v.note;
+}
+
+function setTab(kind) {
+  currentKind = kind;
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.kind === kind));
+  renderDiagram(kind);
+  renderStats(kind);
+}
+
+function render() {
+  setTab(currentKind);
+}
+
+// ---- Wire up events ----
+tabs.forEach(t => t.addEventListener('click', () => setTab(t.dataset.kind)));
+
+// ---- Theme sync (LAST) ----
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(
+  window.parent.document.documentElement,
+  { attributes: true, attributeFilter: ['class'] }
+); } catch(e) {}
+</script>
+</body>
+</html>

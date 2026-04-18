@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>对比学习三种 Loss 的作用</title>
+<style>
+:root { --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+        --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+        --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387 }
+.light { --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+         --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+         --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b }
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 16px;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  background: var(--bg); color: var(--fg);
+}
+.container { display: flex; gap: 16px; flex-wrap: wrap; }
+.left { flex: 1 1 360px; min-width: 300px; }
+.right { flex: 0 0 260px; min-width: 220px; }
+h3 { margin: 0 0 12px; font-size: 14px; color: var(--mauve); }
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.tab {
+  padding: 6px 10px; font-size: 12px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--fg); border-radius: 4px;
+  font-family: inherit;
+}
+.tab.active { background: var(--mauve); color: var(--bg); border-color: var(--mauve); }
+.tab:hover { border-color: var(--mauve); }
+canvas { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; display: block; width: 100%; }
+.controls { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+button {
+  padding: 6px 12px; font-size: 12px; cursor: pointer;
+  background: var(--overlay); border: 1px solid var(--border);
+  color: var(--fg); border-radius: 4px;
+  font-family: inherit;
+}
+button:hover { border-color: var(--blue); }
+button.primary { background: var(--green); color: var(--bg); border-color: var(--green); font-weight: bold; }
+.info-box { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 12px; font-size: 12px; line-height: 1.6; }
+.info-box .formula { background: var(--overlay); padding: 8px; border-radius: 4px; margin: 8px 0; color: var(--yellow); font-size: 11px; white-space: pre-wrap; }
+.legend { display: flex; gap: 12px; font-size: 11px; margin-top: 8px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.step-info { font-size: 11px; color: var(--muted); margin-top: 6px; }
+strong { color: var(--peach); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="left">
+    <div class="tabs">
+      <button class="tab active" data-loss="cosine">CosineSimilarityLoss</button>
+      <button class="tab" data-loss="triplet">TripletLoss</button>
+      <button class="tab" data-loss="mnr">MultipleNegativesRankingLoss</button>
+    </div>
+    <canvas id="canvas" width="600" height="400"></canvas>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:var(--blue)"></span>Anchor</div>
+      <div class="legend-item"><span class="dot" style="background:var(--green)"></span>Positive</div>
+      <div class="legend-item"><span class="dot" style="background:var(--red)"></span>Negative</div>
+      <div class="legend-item"><span style="color:var(--yellow)">━</span> 拉近方向</div>
+      <div class="legend-item"><span style="color:var(--peach)">━</span> 推远方向</div>
+    </div>
+    <div class="controls">
+      <button id="step" class="primary">训练一步 →</button>
+      <button id="reset">重置</button>
+      <span class="step-info" id="step-info">Step 0</span>
+    </div>
+  </div>
+  <div class="right">
+    <div class="info-box">
+      <h3 id="loss-title">CosineSimilarityLoss</h3>
+      <div id="loss-desc"></div>
+      <div class="formula" id="loss-formula"></div>
+      <div id="loss-when"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const LOSS_CONFIGS = {
+  cosine: {
+    title: 'CosineSimilarityLoss',
+    desc: '直接对每一对 (s1, s2) 预测相似度分数。正对 label=1 拉到最近，负对 label=0 推远。',
+    formula: 'L = MSE( cos(s1,s2), label )\n\nlabel ∈ [0, 1]',
+    when: '适合有连续相似度标注的数据（如 STS-B）。每一对独立计算，实现简单。'
+  },
+  triplet: {
+    title: 'TripletLoss',
+    desc: '一次处理三元组 (anchor, positive, negative)。要求 anchor 到 positive 的距离比到 negative 近至少一个 margin。',
+    formula: 'L = max(0, d(a,p) - d(a,n) + margin)\n\nd = 距离函数（余弦/欧式）',
+    when: '适合有明确正负三元组的场景。margin 控制推远强度。'
+  },
+  mnr: {
+    title: 'MultipleNegativesRankingLoss',
+    desc: '批内对比：每个 anchor 的"正例"是自己的 positive，其他 batch 成员的 positive 全部当负例。Batch 越大任务越难，信号越强。',
+    formula: 'L = -log( exp(sim(a,p)) /\n       Σⱼ exp(sim(a,pⱼ)) )\n\n即 batch 内的 Softmax 交叉熵',
+    when: '最常用！只要正样本对（问-答、标题-摘要），负样本自动采样。Batch size 建议 ≥ 128。'
+  }
+};
+
+const INITIAL = {
+  anchor: { x: 200, y: 200 },
+  positive: { x: 400, y: 150 },
+  negative: { x: 380, y: 280 },
+  // MNR 额外的 batch 成员
+  extra1: { x: 120, y: 100 },
+  extra2: { x: 500, y: 320 },
+  extra3: { x: 290, y: 340 },
+};
+
+let points = JSON.parse(JSON.stringify(INITIAL));
+let step = 0;
+let currentLoss = 'cosine';
+let trails = { anchor: [], positive: [], negative: [], extra1: [], extra2: [], extra3: [] };
+
+function css(varName) {
+  return getComputedStyle(document.body).getPropertyValue(varName).trim();
+}
+
+function drawArrow(fromX, fromY, toX, toY, color, dashed) {
+  const headlen = 8;
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  const angle = Math.atan2(dy, dx);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1.5;
+  if (dashed) ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(fromX, fromY);
+  ctx.lineTo(toX, toY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(toX, toY);
+  ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI/6), toY - headlen * Math.sin(angle - Math.PI/6));
+  ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI/6), toY - headlen * Math.sin(angle + Math.PI/6));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPoint(p, label, color, radius = 10) {
+  ctx.beginPath();
+  ctx.fillStyle = color;
+  ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css('--bg');
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = css('--fg');
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, p.x, p.y - radius - 4);
+}
+
+function drawTrail(arr, color) {
+  if (arr.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.3;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 3]);
+  ctx.beginPath();
+  ctx.moveTo(arr[0].x, arr[0].y);
+  for (let i = 1; i < arr.length; i++) ctx.lineTo(arr[i].x, arr[i].y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function render() {
+  ctx.fillStyle = css('--surface');
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // grid
+  ctx.strokeStyle = css('--border');
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= canvas.width; x += 50) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+  }
+  for (let y = 0; y <= canvas.height; y += 50) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+
+  // trails
+  drawTrail(trails.anchor, css('--blue'));
+  drawTrail(trails.positive, css('--green'));
+  drawTrail(trails.negative, css('--red'));
+
+  const a = points.anchor, p = points.positive, n = points.negative;
+
+  if (currentLoss === 'cosine') {
+    // pull a-p together (yellow), push a-n apart (peach)
+    drawArrow(a.x, a.y, p.x, p.y, css('--yellow'));
+    drawArrow(n.x, n.y, a.x + (a.x - n.x) * 0.25 + n.x, a.y + (a.y - n.y) * 0.25 + n.y, css('--peach'), true);
+    drawPoint(a, 'Anchor (label=1 with P, 0 with N)', css('--blue'));
+    drawPoint(p, 'Positive', css('--green'));
+    drawPoint(n, 'Negative', css('--red'));
+  } else if (currentLoss === 'triplet') {
+    // margin circle around anchor
+    const dn = Math.hypot(n.x - a.x, n.y - a.y);
+    ctx.save();
+    ctx.strokeStyle = css('--peach');
+    ctx.setLineDash([3, 3]);
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, dn, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    drawArrow(a.x, a.y, p.x, p.y, css('--yellow'));
+    drawArrow(a.x, a.y, n.x, n.y, css('--peach'), true);
+    drawPoint(a, 'Anchor', css('--blue'));
+    drawPoint(p, 'Positive (d close)', css('--green'));
+    drawPoint(n, 'Negative (d > d_ap + margin)', css('--red'));
+  } else if (currentLoss === 'mnr') {
+    // Anchor 和 positive 拉近，其他"所有 positive"都当 negative 推远
+    const e1 = points.extra1, e2 = points.extra2, e3 = points.extra3;
+    drawArrow(a.x, a.y, p.x, p.y, css('--yellow'));
+    // 其他作为 in-batch negative 被推远
+    [e1, e2, e3, n].forEach(negPt => {
+      drawArrow(a.x, a.y, negPt.x, negPt.y, css('--peach'), true);
+    });
+    drawPoint(e1, 'batch P₁', css('--red'), 8);
+    drawPoint(e2, 'batch P₂', css('--red'), 8);
+    drawPoint(e3, 'batch P₃', css('--red'), 8);
+    drawPoint(n, 'batch P₄', css('--red'), 8);
+    drawPoint(a, 'Anchor', css('--blue'));
+    drawPoint(p, 'True Positive', css('--green'));
+  }
+}
+
+function moveToward(from, to, rate) {
+  const dx = (to.x - from.x) * rate;
+  const dy = (to.y - from.y) * rate;
+  return { x: from.x + dx, y: from.y + dy };
+}
+
+function moveAway(from, avoid, rate, maxStep) {
+  const dx = from.x - avoid.x;
+  const dy = from.y - avoid.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const step = Math.min(maxStep, len * rate);
+  return { x: from.x + (dx / len) * step, y: from.y + (dy / len) * step };
+}
+
+function clamp(p) {
+  return { x: Math.max(30, Math.min(canvas.width - 30, p.x)), y: Math.max(30, Math.min(canvas.height - 30, p.y)) };
+}
+
+function stepTrain() {
+  for (const k of ['anchor','positive','negative','extra1','extra2','extra3']) {
+    trails[k].push({ ...points[k] });
+    if (trails[k].length > 30) trails[k].shift();
+  }
+
+  if (currentLoss === 'cosine') {
+    points.positive = clamp(moveToward(points.positive, points.anchor, 0.12));
+    points.anchor = clamp(moveToward(points.anchor, points.positive, 0.06));
+    points.negative = clamp(moveAway(points.negative, points.anchor, 0.15, 25));
+  } else if (currentLoss === 'triplet') {
+    // 只有当 d(a,n) < d(a,p) + margin 时才更新
+    const dap = Math.hypot(points.anchor.x - points.positive.x, points.anchor.y - points.positive.y);
+    const dan = Math.hypot(points.anchor.x - points.negative.x, points.anchor.y - points.negative.y);
+    const margin = 80;
+    if (dan < dap + margin) {
+      points.positive = clamp(moveToward(points.positive, points.anchor, 0.15));
+      points.negative = clamp(moveAway(points.negative, points.anchor, 0.15, 30));
+    } else {
+      // 已满足，只轻微调整
+      points.positive = clamp(moveToward(points.positive, points.anchor, 0.05));
+    }
+  } else if (currentLoss === 'mnr') {
+    // anchor 和 positive 拉近；其他 batch 成员（包括 negative）都被推远
+    points.positive = clamp(moveToward(points.positive, points.anchor, 0.15));
+    ['negative','extra1','extra2','extra3'].forEach(k => {
+      points[k] = clamp(moveAway(points[k], points.anchor, 0.08, 15));
+    });
+  }
+
+  step++;
+  document.getElementById('step-info').textContent = 'Step ' + step;
+  render();
+}
+
+function updateInfoBox() {
+  const cfg = LOSS_CONFIGS[currentLoss];
+  document.getElementById('loss-title').textContent = cfg.title;
+  document.getElementById('loss-desc').textContent = cfg.desc;
+  document.getElementById('loss-formula').textContent = cfg.formula;
+  document.getElementById('loss-when').textContent = cfg.when;
+}
+
+function reset() {
+  points = JSON.parse(JSON.stringify(INITIAL));
+  step = 0;
+  trails = { anchor: [], positive: [], negative: [], extra1: [], extra2: [], extra3: [] };
+  document.getElementById('step-info').textContent = 'Step 0';
+  render();
+}
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    currentLoss = t.dataset.loss;
+    reset();
+    updateInfoBox();
+  });
+});
+document.getElementById('step').addEventListener('click', stepTrain);
+document.getElementById('reset').addEventListener('click', reset);
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch (e) {}
+  updateInfoBox();
+  render();
+}
+
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch (e) {}
+</script>
+</body>
+</html>

@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<title>CLIP 对比学习矩阵</title>
+<style>
+:root { --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+        --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+        --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387 }
+.light { --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+         --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+         --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b }
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.layout { display: flex; gap: 16px; flex-wrap: wrap; }
+.pane {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  flex: 1 1 340px;
+}
+.pane h3 { margin: 0 0 10px 0; font-size: 13px; color: var(--mauve); }
+
+.controls { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+button {
+  background: var(--overlay);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--mauve); }
+button.primary { background: var(--mauve); color: var(--bg); border-color: var(--mauve); }
+button.primary:hover { filter: brightness(1.1); }
+
+.matrix {
+  display: grid;
+  grid-template-columns: 60px repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+.label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px;
+}
+.label.image { font-size: 22px; }
+.cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  transition: background 0.5s, color 0.5s;
+  border: 1px solid var(--border);
+}
+
+.legend {
+  margin-top: 12px;
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  align-items: center;
+}
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--border); }
+
+.progress {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.progress span { color: var(--blue); }
+
+.loss-formula {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.loss-formula code { color: var(--green); }
+.loss-formula .hl { color: var(--peach); font-weight: bold; }
+
+.explain {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--overlay);
+  border-left: 3px solid var(--peach);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.explain strong { color: var(--peach); }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="pane">
+    <h3>相似度矩阵（图像 × 文本）</h3>
+    <div class="controls">
+      <button id="stepBtn" class="primary">训练一步 ▶</button>
+      <button id="autoBtn">自动训练</button>
+      <button id="resetBtn">重置</button>
+    </div>
+    <div class="matrix" id="matrix"></div>
+    <div class="legend">
+      <span>低</span>
+      <div class="legend-item"><div class="swatch" style="background: #1a1a2e;"></div></div>
+      <div class="legend-item"><div class="swatch" style="background: #3a4a7a;"></div></div>
+      <div class="legend-item"><div class="swatch" style="background: #5a7aca;"></div></div>
+      <div class="legend-item"><div class="swatch" style="background: #a6e3a1;"></div></div>
+      <span>高</span>
+    </div>
+    <div class="progress" id="progress">训练步数：<span>0</span></div>
+  </div>
+
+  <div class="pane">
+    <h3>对比学习损失（InfoNCE）</h3>
+    <div class="loss-formula">
+      对于 batch 中的 <span class="hl">N=4</span> 对图文：<br/><br/>
+      构造相似度矩阵 <code>S[i][j] = cos(image_i, text_j)</code><br/><br/>
+      损失函数（简化版）：<br/>
+      <code>L = -Σᵢ log[ exp(S[i][i]/τ) / Σⱼ exp(S[i][j]/τ) ]</code><br/><br/>
+      <span class="hl">目标</span>：让对角线 <code>S[i][i]</code> 最大，<br/>
+      非对角线 <code>S[i][j], j≠i</code> 最小。<br/><br/>
+      <span class="hl">τ (温度)</span>：控制 softmax 分布的 sharpness，<br/>
+      CLIP 用可学习的 τ ≈ 0.07。
+    </div>
+    <div class="explain">
+      <strong>为什么这样有效？</strong><br/>
+      单看一条 (image, text) 对，模型无法知道"什么是好"。
+      但放进一个 batch 和其他 N-1 个负样本一起做 softmax 归一化后，
+      模型必须学会"为什么 image_A 应该匹配 text_A 而不是 text_B/C/D"，
+      才能把对角线 push up、其他位置 push down。
+      <br/><br/>
+      <strong>4 亿对图文 + 这个 loss</strong> 就是 CLIP 的全部秘密。
+    </div>
+  </div>
+</div>
+
+<script>
+// 1. Declarations first
+const pairs = [
+  { img: '🐱', txt: 'a cat' },
+  { img: '🐶', txt: 'a dog' },
+  { img: '🚗', txt: 'a car' },
+  { img: '🏠', txt: 'a house' },
+];
+const N = pairs.length;
+
+// Similarity matrix: S[i][j] is image i × text j
+// Start with random values (~0.25, uniform)
+let S = [];
+let step = 0;
+
+function resetMatrix() {
+  S = [];
+  for (let i = 0; i < N; i++) {
+    const row = [];
+    for (let j = 0; j < N; j++) {
+      row.push(0.15 + Math.random() * 0.2);
+    }
+    S.push(row);
+  }
+  step = 0;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function colorForValue(v) {
+  // v in [0, 1]. low => dark blue, mid => blue, high => green
+  const clamp = Math.max(0, Math.min(1, v));
+  if (clamp < 0.5) {
+    // dark bg -> blue
+    const t = clamp / 0.5;
+    const r = Math.round(lerp(26, 58, t));
+    const g = Math.round(lerp(26, 74, t));
+    const b = Math.round(lerp(46, 122, t));
+    return `rgb(${r}, ${g}, ${b})`;
+  } else {
+    // blue -> green
+    const t = (clamp - 0.5) / 0.5;
+    const r = Math.round(lerp(58, 166, t));
+    const g = Math.round(lerp(74, 227, t));
+    const b = Math.round(lerp(122, 161, t));
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+}
+
+function textColorForValue(v) {
+  return v > 0.55 ? '#1e1e2e' : '#cdd6f4';
+}
+
+function render() {
+  const matrix = document.getElementById('matrix');
+  matrix.innerHTML = '';
+  // header row: empty + text labels
+  matrix.appendChild(makeDiv('label', ''));
+  pairs.forEach(p => {
+    matrix.appendChild(makeDiv('label', `"${p.txt}"`));
+  });
+  // each row: image label + 4 cells
+  for (let i = 0; i < N; i++) {
+    matrix.appendChild(makeDiv('label image', pairs[i].img));
+    for (let j = 0; j < N; j++) {
+      const v = S[i][j];
+      const c = makeDiv('cell', v.toFixed(2));
+      c.style.background = colorForValue(v);
+      c.style.color = textColorForValue(v);
+      if (i === j) c.style.borderColor = 'var(--green)';
+      matrix.appendChild(c);
+    }
+  }
+  document.getElementById('progress').innerHTML = `训练步数：<span>${step}</span>`;
+}
+
+function makeDiv(cls, content) {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = content;
+  return d;
+}
+
+function trainStep() {
+  step += 1;
+  // Move diagonal up, off-diagonal down, with diminishing returns
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      if (i === j) {
+        S[i][j] = S[i][j] + (0.98 - S[i][j]) * 0.22;
+      } else {
+        S[i][j] = S[i][j] + (0.02 - S[i][j]) * 0.18;
+      }
+      // tiny noise
+      S[i][j] += (Math.random() - 0.5) * 0.01;
+      S[i][j] = Math.max(0, Math.min(1, S[i][j]));
+    }
+  }
+  render();
+}
+
+let autoTimer = null;
+document.getElementById('stepBtn').addEventListener('click', trainStep);
+document.getElementById('autoBtn').addEventListener('click', () => {
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    document.getElementById('autoBtn').textContent = '自动训练';
+  } else {
+    autoTimer = setInterval(() => {
+      trainStep();
+      if (step >= 30) {
+        clearInterval(autoTimer);
+        autoTimer = null;
+        document.getElementById('autoBtn').textContent = '自动训练';
+      }
+    }, 400);
+    document.getElementById('autoBtn').textContent = '停止';
+  }
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; document.getElementById('autoBtn').textContent = '自动训练'; }
+  resetMatrix();
+  render();
+});
+
+resetMatrix();
+
+// 2. Theme sync LAST
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

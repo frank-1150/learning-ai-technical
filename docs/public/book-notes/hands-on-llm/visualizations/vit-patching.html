@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<title>ViT Patch 切分演示</title>
+<style>
+:root { --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+        --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+        --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387 }
+.light { --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+         --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+         --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b }
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  min-height: 100vh;
+}
+
+.layout { display: flex; gap: 16px; flex-wrap: wrap; }
+.pane {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  flex: 1 1 320px;
+}
+.pane h3 { margin: 0 0 10px 0; font-size: 13px; color: var(--mauve); }
+
+.controls { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+button, select {
+  background: var(--overlay);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--mauve); }
+button.active { background: var(--mauve); color: var(--bg); border-color: var(--mauve); }
+label { color: var(--muted); font-size: 12px; }
+
+#canvasWrap { position: relative; width: 288px; height: 288px; margin: 0 auto; }
+canvas { display: block; border: 1px solid var(--border); border-radius: 4px; }
+
+.tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+.token {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  transition: transform 0.2s;
+}
+.token:hover { transform: scale(1.6); z-index: 10; border-color: var(--mauve); }
+
+.stats {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.stats span { color: var(--blue); }
+
+.vector-demo {
+  margin-top: 10px;
+  padding: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.vector-demo code { color: var(--green); }
+
+.explain {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--overlay);
+  border-left: 3px solid var(--peach);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fg);
+}
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="pane">
+    <h3>输入图像</h3>
+    <div class="controls">
+      <label>图像：</label>
+      <select id="imgSel">
+        <option value="cat">猫</option>
+        <option value="dog">狗</option>
+        <option value="car">车</option>
+      </select>
+      <label>Patch 大小：</label>
+      <select id="patchSel">
+        <option value="4">4x4 (72 tokens)</option>
+        <option value="6" selected>6x6 (48 tokens)</option>
+        <option value="8">8x8 (36 tokens)</option>
+      </select>
+    </div>
+    <div id="canvasWrap">
+      <canvas id="cv" width="288" height="288"></canvas>
+    </div>
+    <div class="controls" style="margin-top: 12px; justify-content: center;">
+      <button id="step1Btn">1. 切分 Patch</button>
+      <button id="step2Btn">2. 展平为 Token</button>
+      <button id="resetBtn">重置</button>
+    </div>
+  </div>
+
+  <div class="pane">
+    <h3>Patch Token 序列</h3>
+    <div class="tokens" id="tokensBox">
+      <span style="color: var(--muted); font-size: 12px;">点击"切分 Patch"开始 →</span>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="vector-demo" id="vectorDemo"></div>
+    <div class="explain">
+      <strong style="color: var(--peach);">ViT 核心思想</strong><br/>
+      把一张图切成 N 个 patch，每个 patch 经过线性投影得到一个 D 维向量，就像文本的一个 token embedding。
+      加上位置编码后，整张图变成长度为 N+1（含 [CLS]）的 token 序列，可以直接送入 Transformer Encoder。
+      <br/><br/>
+      原论文用 <span style="color: var(--blue);">16×16</span> patch 处理 <span style="color: var(--blue);">224×224</span> 图像，得到 <span style="color: var(--blue);">14×14 = 196</span> 个 patch，每个投影到 768 维。
+    </div>
+  </div>
+</div>
+
+<script>
+// 1. Declarations first
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const imgSel = document.getElementById('imgSel');
+const patchSel = document.getElementById('patchSel');
+const step1Btn = document.getElementById('step1Btn');
+const step2Btn = document.getElementById('step2Btn');
+const resetBtn = document.getElementById('resetBtn');
+const tokensBox = document.getElementById('tokensBox');
+const statsEl = document.getElementById('stats');
+const vectorDemo = document.getElementById('vectorDemo');
+
+let state = 'initial'; // 'initial' | 'patched' | 'flattened'
+const W = 288;
+
+function getThemeColors() {
+  const s = getComputedStyle(document.body);
+  return {
+    bg: s.getPropertyValue('--bg').trim(),
+    fg: s.getPropertyValue('--fg').trim(),
+    border: s.getPropertyValue('--border').trim(),
+    peach: s.getPropertyValue('--peach').trim(),
+    mauve: s.getPropertyValue('--mauve').trim(),
+    blue: s.getPropertyValue('--blue').trim(),
+    yellow: s.getPropertyValue('--yellow').trim(),
+    green: s.getPropertyValue('--green').trim(),
+    muted: s.getPropertyValue('--muted').trim(),
+    overlay: s.getPropertyValue('--overlay').trim(),
+  };
+}
+
+function drawCat() {
+  const c = getThemeColors();
+  ctx.fillStyle = c.overlay;
+  ctx.fillRect(0, 0, W, W);
+  // body
+  ctx.fillStyle = c.peach;
+  ctx.beginPath();
+  ctx.ellipse(W/2, W/2+30, 90, 70, 0, 0, Math.PI*2);
+  ctx.fill();
+  // head
+  ctx.beginPath();
+  ctx.arc(W/2, W/2-40, 60, 0, Math.PI*2);
+  ctx.fill();
+  // ears
+  ctx.beginPath();
+  ctx.moveTo(W/2-55, W/2-70);
+  ctx.lineTo(W/2-35, W/2-100);
+  ctx.lineTo(W/2-20, W/2-70);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(W/2+55, W/2-70);
+  ctx.lineTo(W/2+35, W/2-100);
+  ctx.lineTo(W/2+20, W/2-70);
+  ctx.closePath(); ctx.fill();
+  // eyes
+  ctx.fillStyle = c.blue;
+  ctx.beginPath(); ctx.arc(W/2-20, W/2-45, 8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W/2+20, W/2-45, 8, 0, Math.PI*2); ctx.fill();
+  // nose
+  ctx.fillStyle = c.mauve;
+  ctx.beginPath();
+  ctx.moveTo(W/2, W/2-25);
+  ctx.lineTo(W/2-5, W/2-15);
+  ctx.lineTo(W/2+5, W/2-15);
+  ctx.closePath(); ctx.fill();
+  // whiskers
+  ctx.strokeStyle = c.fg;
+  ctx.lineWidth = 1;
+  for (let i=-1; i<=1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(W/2-10, W/2-18+i*5); ctx.lineTo(W/2-40, W/2-18+i*8); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(W/2+10, W/2-18+i*5); ctx.lineTo(W/2+40, W/2-18+i*8); ctx.stroke();
+  }
+}
+
+function drawDog() {
+  const c = getThemeColors();
+  ctx.fillStyle = c.overlay;
+  ctx.fillRect(0, 0, W, W);
+  // body
+  ctx.fillStyle = c.yellow;
+  ctx.beginPath();
+  ctx.ellipse(W/2, W/2+30, 85, 65, 0, 0, Math.PI*2);
+  ctx.fill();
+  // head
+  ctx.beginPath();
+  ctx.arc(W/2, W/2-30, 55, 0, Math.PI*2);
+  ctx.fill();
+  // ears (floppy)
+  ctx.fillStyle = c.peach;
+  ctx.beginPath();
+  ctx.ellipse(W/2-55, W/2-20, 18, 40, -0.3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(W/2+55, W/2-20, 18, 40, 0.3, 0, Math.PI*2); ctx.fill();
+  // eyes
+  ctx.fillStyle = c.bg;
+  ctx.beginPath(); ctx.arc(W/2-18, W/2-35, 6, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W/2+18, W/2-35, 6, 0, Math.PI*2); ctx.fill();
+  // nose
+  ctx.fillStyle = c.bg;
+  ctx.beginPath(); ctx.arc(W/2, W/2-10, 8, 0, Math.PI*2); ctx.fill();
+  // tongue
+  ctx.fillStyle = c.peach;
+  ctx.fillRect(W/2-8, W/2+5, 16, 18);
+}
+
+function drawCar() {
+  const c = getThemeColors();
+  // sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, W);
+  grad.addColorStop(0, c.mauve);
+  grad.addColorStop(0.6, c.peach);
+  grad.addColorStop(1, c.overlay);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, W);
+  // sun
+  ctx.fillStyle = c.yellow;
+  ctx.beginPath(); ctx.arc(W/2, W/2+20, 25, 0, Math.PI*2); ctx.fill();
+  // road
+  ctx.fillStyle = c.overlay;
+  ctx.fillRect(0, W*0.65, W, W*0.35);
+  // car body
+  ctx.fillStyle = c.red;
+  ctx.fillRect(W/2-70, W*0.7, 140, 30);
+  ctx.beginPath();
+  ctx.moveTo(W/2-50, W*0.7);
+  ctx.lineTo(W/2-35, W*0.6);
+  ctx.lineTo(W/2+35, W*0.6);
+  ctx.lineTo(W/2+50, W*0.7);
+  ctx.closePath(); ctx.fill();
+  // wheels
+  ctx.fillStyle = c.bg;
+  ctx.beginPath(); ctx.arc(W/2-45, W*0.75+15, 14, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W/2+45, W*0.75+15, 14, 0, Math.PI*2); ctx.fill();
+  // headlights
+  ctx.fillStyle = c.yellow;
+  ctx.fillRect(W/2+60, W*0.72, 10, 8);
+}
+
+function drawImage() {
+  const kind = imgSel.value;
+  if (kind === 'cat') drawCat();
+  else if (kind === 'dog') drawDog();
+  else drawCar();
+}
+
+function drawPatchGrid() {
+  const c = getThemeColors();
+  const n = parseInt(patchSel.value, 10);
+  const step = W / n;
+  ctx.strokeStyle = c.mauve;
+  ctx.lineWidth = 2;
+  for (let i = 1; i < n; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i*step, 0); ctx.lineTo(i*step, W); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i*step); ctx.lineTo(W, i*step); ctx.stroke();
+  }
+}
+
+function extractTokens() {
+  const n = parseInt(patchSel.value, 10);
+  const step = W / n;
+  const N = n * n;
+  // Use actual canvas to capture patches
+  tokensBox.innerHTML = '';
+  const tmpCv = document.createElement('canvas');
+  tmpCv.width = step; tmpCv.height = step;
+  const tmpCtx = tmpCv.getContext('2d');
+  const patches = [];
+  for (let r = 0; r < n; r++) {
+    for (let col = 0; col < n; col++) {
+      tmpCtx.clearRect(0, 0, step, step);
+      tmpCtx.drawImage(cv, col*step, r*step, step, step, 0, 0, step, step);
+      patches.push(tmpCv.toDataURL());
+    }
+  }
+  patches.forEach((url, i) => {
+    const d = document.createElement('div');
+    d.className = 'token';
+    d.style.backgroundImage = `url(${url})`;
+    d.title = `Patch #${i+1}`;
+    // stagger animation
+    d.style.opacity = 0;
+    d.style.transform = 'translateY(-10px)';
+    tokensBox.appendChild(d);
+    setTimeout(() => {
+      d.style.transition = 'opacity 0.3s, transform 0.3s';
+      d.style.opacity = 1;
+      d.style.transform = 'translateY(0)';
+    }, i * 15);
+  });
+  // stats
+  const D = 768;
+  statsEl.innerHTML = `
+    共 <span>${N}</span> 个 patch token（不含 [CLS]）<br/>
+    每个 patch 尺寸：<span>${step.toFixed(0)}×${step.toFixed(0)}×3</span> = <span>${(step*step*3).toFixed(0)}</span> 维<br/>
+    线性投影后 → <span>${D}</span> 维 embedding<br/>
+    最终 Encoder 输入形状：<span>[${N+1}, ${D}]</span>（含 [CLS]）
+  `;
+  vectorDemo.innerHTML = `
+    <code>patch[0]</code> → flatten → <code>[p₁, p₂, ..., p_${Math.round(step*step*3)}]</code><br/>
+    → Linear(${Math.round(step*step*3)} → ${D}) → <code>embedding ∈ ℝ^${D}</code>
+  `;
+}
+
+function rebuild() {
+  drawImage();
+  tokensBox.innerHTML = '<span style="color: var(--muted); font-size: 12px;">点击"切分 Patch"开始 →</span>';
+  statsEl.innerHTML = '';
+  vectorDemo.innerHTML = '';
+  state = 'initial';
+  step1Btn.classList.remove('active');
+  step2Btn.classList.remove('active');
+}
+
+imgSel.addEventListener('change', rebuild);
+patchSel.addEventListener('change', rebuild);
+
+step1Btn.addEventListener('click', () => {
+  drawImage();
+  drawPatchGrid();
+  state = 'patched';
+  step1Btn.classList.add('active');
+  step2Btn.classList.remove('active');
+});
+
+step2Btn.addEventListener('click', () => {
+  if (state === 'initial') {
+    drawImage();
+    drawPatchGrid();
+  }
+  extractTokens();
+  state = 'flattened';
+  step2Btn.classList.add('active');
+});
+
+resetBtn.addEventListener('click', rebuild);
+
+// 2. Theme sync LAST
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  rebuild();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

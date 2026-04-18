@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tokenizer 对比实验</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --fg: #cdd6f4;
+    --muted: #6c7086;
+    --surface: #181825;
+    --border: #45475a;
+    --overlay: #313244;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    --blue: #89b4fa;
+    --yellow: #f9e2af;
+    --mauve: #cba6f7;
+    --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5;
+    --fg: #4c4f69;
+    --muted: #8c8fa1;
+    --surface: #e6e9ef;
+    --border: #ccd0da;
+    --overlay: #dce0e8;
+    --green: #40a02b;
+    --red: #d20f39;
+    --blue: #1e66f5;
+    --yellow: #df8e1d;
+    --mauve: #8839ef;
+    --peach: #fe640b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 14px;
+    min-height: 100vh;
+  }
+
+  h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--blue);
+    margin-bottom: 10px;
+    letter-spacing: 0.02em;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  /* Input area */
+  .preset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .preset-btn {
+    background: var(--overlay);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: border-color 0.1s, color 0.1s, background 0.1s;
+  }
+
+  .preset-btn:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 110px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.55;
+    resize: vertical;
+    outline: none;
+  }
+
+  textarea:focus { border-color: var(--blue); }
+
+  /* Algorithm switcher */
+  .algo-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+
+  .algo-btn {
+    flex: 1;
+    min-width: 100px;
+    background: var(--overlay);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 10px;
+    cursor: pointer;
+    transition: all 0.1s;
+    text-align: center;
+  }
+
+  .algo-btn .algo-desc {
+    display: block;
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .algo-btn:hover { border-color: var(--blue); }
+
+  .algo-btn.active {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: var(--bg);
+  }
+
+  .algo-btn.active .algo-desc { color: var(--bg); opacity: 0.85; }
+
+  /* Output area */
+  .token-area {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 130px;
+    line-height: 2.1;
+    word-break: break-all;
+    white-space: pre-wrap;
+  }
+
+  .token {
+    display: inline-block;
+    padding: 2px 6px;
+    margin: 1px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 12px;
+    color: #1e1e2e;
+    white-space: pre;
+    border: 1px solid rgba(0,0,0,0.1);
+  }
+
+  .token-special {
+    background: var(--mauve) !important;
+    color: #fff !important;
+    font-weight: 700;
+    font-size: 11px;
+  }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .stat-card {
+    background: var(--overlay);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 10px;
+    text-align: center;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 3px;
+  }
+
+  .stat-value {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--green);
+    font-family: inherit;
+  }
+
+  .stat-sub {
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .algo-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: var(--overlay);
+    border-left: 3px solid var(--blue);
+    border-radius: 4px;
+    line-height: 1.55;
+  }
+
+  .legend {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 3px;
+  }
+</style>
+</head>
+<body>
+
+<h2>Tokenizer 对比实验</h2>
+
+<div class="layout">
+  <div class="panel">
+    <div class="panel-title">① 输入文本（或点击预设）</div>
+    <div class="preset-row" id="presetRow"></div>
+    <textarea id="inputText" spellcheck="false"></textarea>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">② 选择分词算法（模拟）</div>
+    <div class="algo-row" id="algoRow"></div>
+    <div class="algo-hint" id="algoHint"></div>
+  </div>
+</div>
+
+<div class="panel" style="margin-bottom:10px;">
+  <div class="panel-title">③ 切分结果</div>
+  <div class="token-area" id="tokenArea"></div>
+  <div class="legend">
+    <span><span class="legend-dot" style="background:var(--mauve)"></span>特殊 token</span>
+    <span><span class="legend-dot" style="background:var(--green)"></span>普通 token</span>
+    <span style="margin-left:auto;color:var(--muted);">空格会显示为 ␣，换行为 ⏎</span>
+  </div>
+  <div class="stats" id="statsRow"></div>
+</div>
+
+<script>
+// ─── 1. Data definitions ────────────────────────────────────────────────────
+
+const PRESETS = [
+  { name: '英文句子', text: 'Hands-on Large Language Models is awesome!' },
+  { name: '中文', text: '自然语言处理中的分词算法非常有意思。' },
+  { name: 'Python 代码', text: 'def add(a, b):\n    return a + b\n\nif True:\n    print("hello")' },
+  { name: '数字', text: 'Pi is 3.14159265. The year is 2024. Cost: $12345.' },
+  { name: 'Emoji', text: 'I love cats 🐱 and music 🎵 and coffee ☕!' },
+  { name: '混合', text: 'English and CAPITALIZATION\n🎵 鸟\nelif x == 5: print("hi") 12.0*50=600' },
+];
+
+const ALGORITHMS = [
+  {
+    id: 'bpe',
+    name: 'BPE',
+    desc: '子词合并（GPT/Llama）',
+    color: 'var(--blue)',
+    hint: 'BPE（Byte Pair Encoding）：从单字开始，反复合并最频繁的字符对，最终得到子词词表。英文常见词保留整词、罕见词拆解。GPT-2/3/4、Llama 使用。本模拟按常见英文词根/词缀切分。',
+  },
+  {
+    id: 'wordpiece',
+    name: 'WordPiece',
+    desc: 'BERT 家族',
+    color: 'var(--green)',
+    hint: 'WordPiece：与 BPE 类似但按 likelihood 选择合并。切分时词中非首部分加 ## 前缀（如 capital + ##ization）。BERT、DistilBERT 使用。对中文默认按单字切分。',
+  },
+  {
+    id: 'byte',
+    name: 'Byte-level',
+    desc: '字节级（ByT5 风格）',
+    color: 'var(--peach)',
+    hint: 'Byte-level：把每个字节（UTF-8 编码下）作为一个 token。词表只有 256，但序列很长。对任何语言、任何 emoji 都能处理——代价是 token 数爆炸。',
+  },
+];
+
+// ─── 2. Simulated tokenizers ────────────────────────────────────────────────
+
+// BPE 模拟：按常见英文子词 + 空格 + 标点 + 中文按单字 + 其他按字符切
+const BPE_COMMON_SUFFIXES = ['ization', 'izing', 'tion', 'ness', 'ment', 'able', 'ible', 'ful', 'less', 'ing', 'ed', 'er', 'est', 'ly', 'es', 's'];
+const BPE_COMMON_PREFIXES = ['un', 're', 'pre', 'dis', 'non', 'over', 'under', 'sub'];
+const BPE_COMMON_WORDS = new Set([
+  'the','a','an','is','are','was','were','be','been','being','have','has','had','do','does','did',
+  'will','would','can','could','should','may','might','must','shall','of','in','on','at','to','for',
+  'with','by','from','about','as','and','or','but','if','then','so','not','no','yes','this','that',
+  'these','those','i','you','he','she','it','we','they','my','your','his','her','its','our','their',
+  'me','him','them','us','what','which','who','whom','where','when','why','how','print','return',
+  'def','class','import','true','false','none','null','hello','world','model','large','language',
+  'hands','on','awesome','cats','love','and','music','coffee','year','cost'
+]);
+
+function bpeTokenize(text) {
+  const tokens = [];
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+
+    // Handle newline
+    if (ch === '\n') { tokens.push({ text: '⏎', special: true, type: 'nl' }); i++; continue; }
+
+    // Handle space (BPE merges leading space with next word; we show it as prefix)
+    if (ch === ' ') {
+      // look ahead to find word
+      let j = i + 1;
+      while (j < text.length && text[j] === ' ') j++;
+      const spaceCount = j - i;
+      if (spaceCount > 1) {
+        // multi-space as single token (GPT-4 style for ≤ 83)
+        tokens.push({ text: '␣'.repeat(spaceCount), type: 'spaces' });
+        i = j;
+      } else {
+        // single space: will be attached to next word as ' word'
+        // but for display we attach here
+        const next = text.slice(j);
+        const wordMatch = next.match(/^[A-Za-z]+/);
+        if (wordMatch) {
+          const word = wordMatch[0];
+          const subtokens = bpeSplitWord(word, true);
+          tokens.push(...subtokens);
+          i = j + word.length;
+        } else {
+          tokens.push({ text: '␣', type: 'space' });
+          i = j;
+        }
+      }
+      continue;
+    }
+
+    // Handle English word
+    const wordMatch = text.slice(i).match(/^[A-Za-z]+/);
+    if (wordMatch) {
+      const word = wordMatch[0];
+      const subtokens = bpeSplitWord(word, false);
+      tokens.push(...subtokens);
+      i += word.length;
+      continue;
+    }
+
+    // Handle number
+    const numMatch = text.slice(i).match(/^\d+/);
+    if (numMatch) {
+      // BPE often merges short numbers, splits long ones
+      const num = numMatch[0];
+      if (num.length <= 3) {
+        tokens.push({ text: num, type: 'num' });
+      } else {
+        // split into 1-3 digit chunks
+        let k = 0;
+        while (k < num.length) {
+          const chunk = num.slice(k, k + 3);
+          tokens.push({ text: chunk, type: 'num' });
+          k += 3;
+        }
+      }
+      i += num.length;
+      continue;
+    }
+
+    // Handle CJK character (single char per token)
+    const code = ch.codePointAt(0);
+    if (code >= 0x4E00 && code <= 0x9FFF) {
+      tokens.push({ text: ch, type: 'cjk' });
+      i++;
+      continue;
+    }
+
+    // Handle emoji (surrogate pair) — in byte-level BPE, would become 3-4 byte tokens
+    if (code >= 0x1F000) {
+      // Represent as 2-3 byte-pieces to show "emoji breaks into multiple tokens"
+      const utf8 = new TextEncoder().encode(ch);
+      for (let b = 0; b < utf8.length; b++) {
+        tokens.push({ text: `\\x${utf8[b].toString(16).toUpperCase()}`, type: 'byte' });
+      }
+      i += ch.length;
+      continue;
+    }
+
+    // Other (punctuation, symbols)
+    tokens.push({ text: ch, type: 'punct' });
+    i++;
+  }
+  return tokens;
+}
+
+function bpeSplitWord(word, withLeadingSpace) {
+  const prefix = withLeadingSpace ? '␣' : '';
+  const lower = word.toLowerCase();
+
+  // If it's a common short word, keep whole
+  if (BPE_COMMON_WORDS.has(lower) && word.length <= 8) {
+    return [{ text: prefix + word, type: 'word' }];
+  }
+
+  // Try splitting off a known suffix
+  for (const suf of BPE_COMMON_SUFFIXES) {
+    if (lower.endsWith(suf) && lower.length > suf.length + 1) {
+      const root = word.slice(0, word.length - suf.length);
+      const sufPart = word.slice(word.length - suf.length);
+      return [
+        { text: prefix + root, type: 'word' },
+        { text: sufPart, type: 'subword' },
+      ];
+    }
+  }
+
+  // Try splitting off a known prefix
+  for (const pre of BPE_COMMON_PREFIXES) {
+    if (lower.startsWith(pre) && lower.length > pre.length + 2) {
+      const prePart = word.slice(0, pre.length);
+      const rest = word.slice(pre.length);
+      return [
+        { text: prefix + prePart, type: 'subword' },
+        { text: rest, type: 'word' },
+      ];
+    }
+  }
+
+  // Default: if word is long, split roughly in half
+  if (word.length >= 8) {
+    const mid = Math.ceil(word.length / 2);
+    return [
+      { text: prefix + word.slice(0, mid), type: 'subword' },
+      { text: word.slice(mid), type: 'subword' },
+    ];
+  }
+
+  return [{ text: prefix + word, type: 'word' }];
+}
+
+// WordPiece 模拟：加 [CLS] / [SEP]，按词切、续接加 ##，中文按单字、emoji 变 [UNK]
+function wordpieceTokenize(text) {
+  const tokens = [{ text: '[CLS]', special: true, type: 'cls' }];
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '\n' || ch === ' ') {
+      // WordPiece collapses whitespace
+      i++;
+      continue;
+    }
+
+    const wordMatch = text.slice(i).match(/^[A-Za-z]+/);
+    if (wordMatch) {
+      const word = wordMatch[0];
+      const subs = wordpieceSplit(word);
+      tokens.push(...subs);
+      i += word.length;
+      continue;
+    }
+
+    const numMatch = text.slice(i).match(/^\d+(\.\d+)?/);
+    if (numMatch) {
+      const num = numMatch[0];
+      // WordPiece often splits each char for numbers
+      for (let k = 0; k < num.length; k++) {
+        tokens.push({ text: k === 0 ? num[k] : '##' + num[k], type: 'num' });
+      }
+      i += num.length;
+      continue;
+    }
+
+    const code = ch.codePointAt(0);
+    if (code >= 0x4E00 && code <= 0x9FFF) {
+      tokens.push({ text: ch, type: 'cjk' });
+      i++;
+      continue;
+    }
+
+    if (code >= 0x1F000) {
+      tokens.push({ text: '[UNK]', special: true, type: 'unk' });
+      i += ch.length;
+      continue;
+    }
+
+    tokens.push({ text: ch, type: 'punct' });
+    i++;
+  }
+  tokens.push({ text: '[SEP]', special: true, type: 'sep' });
+  return tokens;
+}
+
+function wordpieceSplit(word) {
+  const lower = word.toLowerCase();
+  // Keep case: WordPiece-cased behavior
+  if (BPE_COMMON_WORDS.has(lower) && word.length <= 8) {
+    return [{ text: word, type: 'word' }];
+  }
+
+  // Try suffix (expressed with ##)
+  for (const suf of BPE_COMMON_SUFFIXES) {
+    if (lower.endsWith(suf) && lower.length > suf.length + 1) {
+      const root = word.slice(0, word.length - suf.length);
+      const sufPart = word.slice(word.length - suf.length);
+      return [
+        { text: root, type: 'word' },
+        { text: '##' + sufPart, type: 'subword' },
+      ];
+    }
+  }
+
+  // Long word: 3-4 char chunks with ##
+  if (word.length >= 8) {
+    const chunks = [];
+    let k = 0;
+    const chunkSize = 4;
+    while (k < word.length) {
+      const piece = word.slice(k, k + chunkSize);
+      chunks.push({ text: k === 0 ? piece : '##' + piece, type: 'subword' });
+      k += chunkSize;
+    }
+    return chunks;
+  }
+
+  return [{ text: word, type: 'word' }];
+}
+
+// Byte-level 模拟：每个字节一个 token
+function byteTokenize(text) {
+  const tokens = [];
+  const bytes = new TextEncoder().encode(text);
+  for (const b of bytes) {
+    // Show printable ASCII as character, non-printable as \xHH
+    if (b >= 0x20 && b < 0x7F && b !== 0x5C) {
+      tokens.push({ text: String.fromCharCode(b), type: 'byte-ascii' });
+    } else if (b === 0x0A) {
+      tokens.push({ text: '⏎', special: true, type: 'nl' });
+    } else if (b === 0x20) {
+      tokens.push({ text: '␣', type: 'byte-space' });
+    } else {
+      tokens.push({ text: `\\x${b.toString(16).toUpperCase().padStart(2, '0')}`, type: 'byte' });
+    }
+  }
+  return tokens;
+}
+
+// ─── 3. Color palette for tokens (deterministic by index) ──────────────────
+
+const TOKEN_PALETTE = [
+  '#f9e2af', '#a6e3a1', '#fab387', '#89dceb', '#cba6f7',
+  '#f5c2e7', '#b4befe', '#94e2d5', '#f38ba8', '#89b4fa',
+];
+
+const TOKEN_PALETTE_LIGHT = [
+  '#fff3c4', '#d4f7c5', '#ffd7b5', '#b8e6f0', '#e0c8f7',
+  '#f9ccea', '#c8cdf9', '#b8edd9', '#fac3d0', '#bbd4ff',
+];
+
+function getColor(idx, isLight) {
+  const pal = isLight ? TOKEN_PALETTE_LIGHT : TOKEN_PALETTE;
+  return pal[idx % pal.length];
+}
+
+// ─── 4. State & render ─────────────────────────────────────────────────────
+
+let currentAlgo = 'bpe';
+let currentText = PRESETS[5].text; // default to mixed
+
+function renderPresets() {
+  const row = document.getElementById('presetRow');
+  row.innerHTML = '';
+  for (const p of PRESETS) {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.textContent = p.name;
+    btn.onclick = () => {
+      currentText = p.text;
+      document.getElementById('inputText').value = currentText;
+      render();
+    };
+    row.appendChild(btn);
+  }
+}
+
+function renderAlgoButtons() {
+  const row = document.getElementById('algoRow');
+  row.innerHTML = '';
+  for (const a of ALGORITHMS) {
+    const btn = document.createElement('button');
+    btn.className = 'algo-btn' + (a.id === currentAlgo ? ' active' : '');
+    btn.innerHTML = `${a.name}<span class="algo-desc">${a.desc}</span>`;
+    btn.onclick = () => {
+      currentAlgo = a.id;
+      render();
+    };
+    row.appendChild(btn);
+  }
+  const algo = ALGORITHMS.find(x => x.id === currentAlgo);
+  document.getElementById('algoHint').textContent = algo.hint;
+}
+
+function renderTokens() {
+  let tokens;
+  if (currentAlgo === 'bpe') tokens = bpeTokenize(currentText);
+  else if (currentAlgo === 'wordpiece') tokens = wordpieceTokenize(currentText);
+  else tokens = byteTokenize(currentText);
+
+  const isLight = document.body.classList.contains('light');
+  const area = document.getElementById('tokenArea');
+  area.innerHTML = '';
+
+  if (tokens.length === 0) {
+    area.innerHTML = '<span style="color:var(--muted);font-size:11px;">（输入一些文本查看切分）</span>';
+  } else {
+    tokens.forEach((t, idx) => {
+      const span = document.createElement('span');
+      span.className = 'token' + (t.special ? ' token-special' : '');
+      span.textContent = t.text;
+      if (!t.special) {
+        span.style.background = getColor(idx, isLight);
+      }
+      span.title = `#${idx + 1}  ${t.type}`;
+      area.appendChild(span);
+    });
+  }
+
+  // Stats
+  const totalTokens = tokens.length;
+  const totalChars = currentText.length;
+  const avgChars = totalTokens === 0 ? 0 : (totalChars / totalTokens).toFixed(2);
+  const specialCount = tokens.filter(t => t.special).length;
+
+  const stats = document.getElementById('statsRow');
+  stats.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Token 总数</div>
+      <div class="stat-value">${totalTokens}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">字符数</div>
+      <div class="stat-value">${totalChars}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">字符 / Token</div>
+      <div class="stat-value">${avgChars}</div>
+      <div class="stat-sub">越高越"紧凑"</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">特殊 token</div>
+      <div class="stat-value">${specialCount}</div>
+    </div>
+  `;
+}
+
+function render() {
+  renderAlgoButtons();
+  renderTokens();
+}
+
+// ─── 5. Initial setup & events ─────────────────────────────────────────────
+
+renderPresets();
+document.getElementById('inputText').value = currentText;
+document.getElementById('inputText').addEventListener('input', (e) => {
+  currentText = e.target.value;
+  renderTokens();
+});
+
+// ─── 6. Theme sync and initial render LAST ─────────────────────────────────
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

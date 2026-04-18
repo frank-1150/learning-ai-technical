@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>三种 Memory 策略的 trade-off</title>
+<style>
+  :root {
+    --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+    --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+    --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387;
+  }
+  .light {
+    --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+    --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+    --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 12px 16px 14px;
+    background: var(--bg); color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px; line-height: 1.45;
+  }
+  h1 { font-size: 14px; margin: 0 0 8px; color: var(--fg); }
+  .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  label { color: var(--muted); font-size: 11px; }
+  input[type=range] { vertical-align: middle; }
+  select, button {
+    font-family: inherit; font-size: 11px; background: var(--surface);
+    color: var(--fg); border: 1px solid var(--border); padding: 4px 8px;
+    border-radius: 3px; cursor: pointer;
+  }
+  .rounds-val { color: var(--blue); font-weight: 600; min-width: 24px; display: inline-block; text-align: right; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .metric {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px 6px;
+  }
+  .metric h3 {
+    font-size: 11px; color: var(--muted); margin: 0 0 6px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .bar-row {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 5px; font-size: 11px;
+  }
+  .bar-row .name { width: 58px; color: var(--fg); }
+  .bar-row .track {
+    flex: 1; height: 14px; background: var(--overlay);
+    border-radius: 2px; position: relative; overflow: hidden;
+  }
+  .bar-row .fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    transition: width 0.4s ease-out;
+    border-radius: 2px;
+  }
+  .bar-row .val { width: 52px; text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .fill.buffer  { background: var(--blue); }
+  .fill.window  { background: var(--peach); }
+  .fill.summary { background: var(--green); }
+  .note {
+    margin-top: 10px; padding: 7px 10px;
+    background: var(--surface); border-left: 3px solid var(--yellow);
+    border-radius: 3px; font-size: 11px; color: var(--fg);
+  }
+  .note b { color: var(--yellow); }
+</style>
+</head>
+<body>
+
+<h1>Memory 策略对比：随对话轮数变化</h1>
+
+<div class="controls">
+  <label>对话轮数:</label>
+  <input id="rounds" type="range" min="5" max="200" value="50" step="5" />
+  <span class="rounds-val" id="rounds-val">50</span>
+  <span style="color: var(--muted); font-size: 11px; margin-left: 10px;">|</span>
+  <label>Window k:</label>
+  <select id="k">
+    <option value="3">3</option>
+    <option value="5" selected>5</option>
+    <option value="10">10</option>
+  </select>
+</div>
+
+<div class="grid">
+  <div class="metric">
+    <h3>Prompt 累计 Token 数</h3>
+    <div class="bar-row"><span class="name">Buffer</span><span class="track"><span class="fill buffer" id="b-tok"></span></span><span class="val" id="b-tok-v">0</span></div>
+    <div class="bar-row"><span class="name">Window</span><span class="track"><span class="fill window" id="w-tok"></span></span><span class="val" id="w-tok-v">0</span></div>
+    <div class="bar-row"><span class="name">Summary</span><span class="track"><span class="fill summary" id="s-tok"></span></span><span class="val" id="s-tok-v">0</span></div>
+  </div>
+
+  <div class="metric">
+    <h3>信息保留率 (%)</h3>
+    <div class="bar-row"><span class="name">Buffer</span><span class="track"><span class="fill buffer" id="b-ret"></span></span><span class="val" id="b-ret-v">0</span></div>
+    <div class="bar-row"><span class="name">Window</span><span class="track"><span class="fill window" id="w-ret"></span></span><span class="val" id="w-ret-v">0</span></div>
+    <div class="bar-row"><span class="name">Summary</span><span class="track"><span class="fill summary" id="s-ret"></span></span><span class="val" id="s-ret-v">0</span></div>
+  </div>
+
+  <div class="metric">
+    <h3>每轮延迟 (ms 相对值)</h3>
+    <div class="bar-row"><span class="name">Buffer</span><span class="track"><span class="fill buffer" id="b-lat"></span></span><span class="val" id="b-lat-v">0</span></div>
+    <div class="bar-row"><span class="name">Window</span><span class="track"><span class="fill window" id="w-lat"></span></span><span class="val" id="w-lat-v">0</span></div>
+    <div class="bar-row"><span class="name">Summary</span><span class="track"><span class="fill summary" id="s-lat"></span></span><span class="val" id="s-lat-v">0</span></div>
+  </div>
+</div>
+
+<div class="note">
+  <b>提示</b>：Buffer 保留全部历史——token 线性增长，100 轮后就逼近 4K/8K 上下文上限；Window 只保留最近 k 轮，token 恒定但丢远期信息；Summary 用 LLM 压缩历史，token 增长很慢但每轮要多一次 summary 调用，延迟更高。
+</div>
+
+<script>
+// Assume each user+assistant exchange ≈ 80 tokens raw
+const TOKENS_PER_ROUND = 80;
+// Summary stays roughly proportional to log of rounds * some factor, capped
+function computeMetrics(rounds, k) {
+  // --- Prompt token sizes ---
+  const bTok = rounds * TOKENS_PER_ROUND;                       // full history
+  const wTok = Math.min(rounds, k) * TOKENS_PER_ROUND;          // last k only
+  // Summary grows slowly: ~120 + 8*log2(rounds+1) * 20 tokens, capped at ~600
+  const sTok = Math.min(600, Math.round(120 + 20 * Math.log2(rounds + 1) * 4));
+
+  // --- Information retention ---
+  const bRet = 100;                                             // full
+  const wRet = Math.round(Math.min(100, (k / rounds) * 100));   // last k / total
+  // Summary: excellent at short range, degrades slowly as rounds grow
+  // approx: 95% at 10 rounds → ~70% at 200 rounds
+  const sRet = Math.max(55, Math.round(100 - 0.18 * rounds));
+
+  // --- Per-turn latency (relative units) ---
+  // Buffer: 1 big LLM call, scales with prompt size
+  const bLat = Math.round(100 + bTok * 0.05);
+  // Window: 1 LLM call, small prompt
+  const wLat = Math.round(100 + wTok * 0.05);
+  // Summary: summarize call + user call; summary call ~ sTok scale
+  const sLat = Math.round(200 + sTok * 0.05 + 60);
+
+  return {
+    tok: { buffer: bTok, window: wTok, summary: sTok },
+    ret: { buffer: bRet, window: wRet, summary: sRet },
+    lat: { buffer: bLat, window: wLat, summary: sLat },
+  };
+}
+
+function fmtTok(n) {
+  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
+  return String(n);
+}
+
+const $r = document.getElementById("rounds");
+const $rv = document.getElementById("rounds-val");
+const $k = document.getElementById("k");
+
+function render() {
+  const rounds = Number($r.value);
+  const k = Number($k.value);
+  $rv.textContent = rounds;
+
+  const m = computeMetrics(rounds, k);
+
+  const maxTok = Math.max(m.tok.buffer, m.tok.window, m.tok.summary, 1);
+  const maxLat = Math.max(m.lat.buffer, m.lat.window, m.lat.summary, 1);
+
+  // Token bars
+  document.getElementById("b-tok").style.width = (m.tok.buffer  / maxTok * 100) + "%";
+  document.getElementById("w-tok").style.width = (m.tok.window  / maxTok * 100) + "%";
+  document.getElementById("s-tok").style.width = (m.tok.summary / maxTok * 100) + "%";
+  document.getElementById("b-tok-v").textContent = fmtTok(m.tok.buffer);
+  document.getElementById("w-tok-v").textContent = fmtTok(m.tok.window);
+  document.getElementById("s-tok-v").textContent = fmtTok(m.tok.summary);
+
+  // Retention bars (0-100)
+  document.getElementById("b-ret").style.width = m.ret.buffer + "%";
+  document.getElementById("w-ret").style.width = m.ret.window + "%";
+  document.getElementById("s-ret").style.width = m.ret.summary + "%";
+  document.getElementById("b-ret-v").textContent = m.ret.buffer + "%";
+  document.getElementById("w-ret-v").textContent = m.ret.window + "%";
+  document.getElementById("s-ret-v").textContent = m.ret.summary + "%";
+
+  // Latency bars
+  document.getElementById("b-lat").style.width = (m.lat.buffer  / maxLat * 100) + "%";
+  document.getElementById("w-lat").style.width = (m.lat.window  / maxLat * 100) + "%";
+  document.getElementById("s-lat").style.width = (m.lat.summary / maxLat * 100) + "%";
+  document.getElementById("b-lat-v").textContent = m.lat.buffer;
+  document.getElementById("w-lat-v").textContent = m.lat.window;
+  document.getElementById("s-lat-v").textContent = m.lat.summary;
+}
+
+$r.addEventListener("input", render);
+$k.addEventListener("change", render);
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(
+  window.parent.document.documentElement,
+  { attributes: true, attributeFilter: ['class'] }
+); } catch(e) {}
+</script>
+</body>
+</html>

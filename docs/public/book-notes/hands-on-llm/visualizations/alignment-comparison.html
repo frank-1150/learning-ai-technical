@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微调与对齐方法对比</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #6c7086;
+  --surface: #181825;
+  --border: #45475a;
+  --overlay: #313244;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --blue: #89b4fa;
+  --yellow: #f9e2af;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+  --teal: #94e2d5;
+}
+.light {
+  --bg: #eff1f5;
+  --fg: #4c4f69;
+  --muted: #8c8fa1;
+  --surface: #e6e9ef;
+  --border: #ccd0da;
+  --overlay: #dce0e8;
+  --green: #40a02b;
+  --red: #d20f39;
+  --blue: #1e66f5;
+  --yellow: #df8e1d;
+  --mauve: #8839ef;
+  --peach: #fe640b;
+  --teal: #179299;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  padding: 16px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.method-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.method-tab {
+  background: var(--overlay);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.method-tab:hover { background: var(--border); }
+.method-tab.active {
+  color: var(--bg);
+  font-weight: 600;
+}
+.method-tab[data-method="full"].active { background: var(--red); border-color: var(--red); }
+.method-tab[data-method="lora"].active { background: var(--blue); border-color: var(--blue); }
+.method-tab[data-method="qlora"].active { background: var(--green); border-color: var(--green); }
+.method-tab[data-method="rlhf"].active { background: var(--peach); border-color: var(--peach); }
+.method-tab[data-method="dpo"].active { background: var(--mauve); border-color: var(--mauve); }
+
+.main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+canvas#radar { display: block; width: 100%; max-width: 420px; margin: 0 auto; height: auto; }
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 60px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.metric-label { color: var(--muted); }
+.metric-track {
+  height: 12px;
+  background: var(--overlay);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.metric-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease, background 0.25s ease;
+}
+.metric-value {
+  text-align: right;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.method-description {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.method-description h3 {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.method-description .use-case {
+  color: var(--muted);
+  margin-top: 6px;
+}
+.method-description .use-case b { color: var(--peach); }
+
+table.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+  font-size: 11.5px;
+}
+.compare-table th, .compare-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.compare-table th {
+  background: var(--overlay);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.compare-table td.method-col { font-weight: 600; }
+.compare-table tr.active td { background: var(--overlay); }
+</style>
+</head>
+<body>
+<h1>五种微调 / 对齐方法多维对比</h1>
+<div class="subtitle">点击上方标签切换方法，查看雷达图与适用场景</div>
+
+<div class="method-tabs">
+  <button class="method-tab" data-method="full">Full Fine-Tuning</button>
+  <button class="method-tab active" data-method="lora">LoRA</button>
+  <button class="method-tab" data-method="qlora">QLoRA</button>
+  <button class="method-tab" data-method="rlhf">RLHF (PPO)</button>
+  <button class="method-tab" data-method="dpo">DPO</button>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <div class="panel-title">雷达图（分数越高 = 越好）</div>
+    <canvas id="radar" width="420" height="360"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">各维度评分</div>
+    <div class="metrics" id="metrics"></div>
+  </div>
+</div>
+
+<div class="method-description" id="description"></div>
+
+<table class="compare-table">
+  <thead>
+    <tr>
+      <th>方法</th>
+      <th>显存</th>
+      <th>质量</th>
+      <th>复杂度</th>
+      <th>数据</th>
+      <th>阶段</th>
+    </tr>
+  </thead>
+  <tbody id="compare-tbody"></tbody>
+</table>
+
+<script>
+// 1. State & data
+// scores: 越大越好。range: 1-10
+const METHODS = {
+  full: {
+    name: "Full Fine-Tuning",
+    color: '--red',
+    scores: {
+      vramEfficiency: 1,   // 显存友好
+      trainSpeed: 2,        // 训练速度
+      quality: 10,          // 最终质量
+      simplicity: 6,        // 实现简单度
+      stability: 9,         // 训练稳定
+    },
+    desc: "更新全部参数。质量上限最高，但 7B 模型就需要 100GB 显存、A100 起步。企业级 / 研究用途。",
+    dataType: "instruction-response 对",
+    stage: "SFT",
+    vram: "极高",
+    complexity: "中（配置简单但基建昂贵）",
+  },
+  lora: {
+    name: "LoRA",
+    color: '--blue',
+    scores: {
+      vramEfficiency: 7,
+      trainSpeed: 8,
+      quality: 8,
+      simplicity: 8,
+      stability: 9,
+    },
+    desc: "冻结主干，只训 ΔW = B·A 两个小矩阵。参数量降至 0.1%，质量接近全量微调。2024 年事实标准。",
+    dataType: "instruction-response 对",
+    stage: "SFT",
+    vram: "中（~20GB for 7B）",
+    complexity: "低",
+  },
+  qlora: {
+    name: "QLoRA",
+    color: '--green',
+    scores: {
+      vramEfficiency: 10,
+      trainSpeed: 7,
+      quality: 8,
+      simplicity: 7,
+      stability: 8,
+    },
+    desc: "LoRA + 4-bit NF4 量化 + 双重量化 + 分页优化器。让 33B 模型能在 24GB 消费级 GPU 上微调。",
+    dataType: "instruction-response 对",
+    stage: "SFT",
+    vram: "极低（~7GB for 7B）",
+    complexity: "低",
+  },
+  rlhf: {
+    name: "RLHF (PPO)",
+    color: '--peach',
+    scores: {
+      vramEfficiency: 2,
+      trainSpeed: 2,
+      quality: 10,
+      simplicity: 2,
+      stability: 3,
+    },
+    desc: "经典三步：SFT → Reward Model → PPO。质量天花板最高，但需要同时维护多个模型、超参敏感、训练不稳定。ChatGPT 最初的方法。",
+    dataType: "(prompt, chosen, rejected) pair",
+    stage: "Preference Tuning",
+    vram: "极高（RM + LLM + value net）",
+    complexity: "极高",
+  },
+  dpo: {
+    name: "DPO",
+    color: '--mauve',
+    scores: {
+      vramEfficiency: 6,
+      trainSpeed: 7,
+      quality: 9,
+      simplicity: 9,
+      stability: 8,
+    },
+    desc: "绕过显式 Reward Model，直接用偏好数据做类 cross-entropy 优化。把 RLHF 降维成监督学习。当前开源社区主流对齐方法。",
+    dataType: "(prompt, chosen, rejected) pair",
+    stage: "Preference Tuning",
+    vram: "中（2 × 模型，可 LoRA 共享）",
+    complexity: "低-中",
+  },
+};
+
+const DIMENSIONS = [
+  { key: 'vramEfficiency', label: '显存友好', short: '显存' },
+  { key: 'trainSpeed',     label: '训练速度', short: '速度' },
+  { key: 'quality',        label: '最终质量', short: '质量' },
+  { key: 'simplicity',     label: '实现简单', short: '简单' },
+  { key: 'stability',      label: '训练稳定', short: '稳定' },
+];
+
+let currentMethod = 'lora';
+
+const tabs = document.querySelectorAll('.method-tab');
+const radar = document.getElementById('radar');
+const metricsEl = document.getElementById('metrics');
+const descEl = document.getElementById('description');
+const tbody = document.getElementById('compare-tbody');
+
+function getCSSColor(varName) {
+  return getComputedStyle(document.body).getPropertyValue(varName).trim();
+}
+
+function drawRadar() {
+  const ctx = radar.getContext('2d');
+  const W = radar.width;
+  const H = radar.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W / 2;
+  const cy = H / 2 + 10;
+  const maxR = Math.min(W, H) * 0.38;
+
+  const colors = {
+    fg: getCSSColor('--fg'),
+    muted: getCSSColor('--muted'),
+    border: getCSSColor('--border'),
+    overlay: getCSSColor('--overlay'),
+  };
+
+  const n = DIMENSIONS.length;
+  const angleStep = (Math.PI * 2) / n;
+  const startAngle = -Math.PI / 2;
+
+  // concentric rings
+  ctx.strokeStyle = colors.border;
+  ctx.lineWidth = 0.6;
+  for (let ring = 1; ring <= 5; ring++) {
+    const r = (maxR * ring) / 5;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = startAngle + angleStep * i;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+  // spokes
+  for (let i = 0; i < n; i++) {
+    const a = startAngle + angleStep * i;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * maxR, cy + Math.sin(a) * maxR);
+    ctx.stroke();
+  }
+
+  // current method polygon
+  const m = METHODS[currentMethod];
+  const fill = getCSSColor(m.color);
+  ctx.fillStyle = fill + '44';
+  ctx.strokeStyle = fill;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  DIMENSIONS.forEach((d, i) => {
+    const a = startAngle + angleStep * i;
+    const r = maxR * (m.scores[d.key] / 10);
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // dots
+  ctx.fillStyle = fill;
+  DIMENSIONS.forEach((d, i) => {
+    const a = startAngle + angleStep * i;
+    const r = maxR * (m.scores[d.key] / 10);
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // labels
+  ctx.fillStyle = colors.fg;
+  ctx.font = '12px "SF Mono", monospace';
+  DIMENSIONS.forEach((d, i) => {
+    const a = startAngle + angleStep * i;
+    const lx = cx + Math.cos(a) * (maxR + 22);
+    const ly = cy + Math.sin(a) * (maxR + 22);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.label, lx, ly);
+  });
+}
+
+function renderMetrics() {
+  const m = METHODS[currentMethod];
+  const color = getCSSColor(m.color);
+  metricsEl.innerHTML = '';
+  DIMENSIONS.forEach(d => {
+    const score = m.scores[d.key];
+    const row = document.createElement('div');
+    row.className = 'metric-row';
+    row.innerHTML = `
+      <span class="metric-label">${d.label}</span>
+      <div class="metric-track"><div class="metric-fill" style="width: ${score * 10}%; background: ${color}"></div></div>
+      <span class="metric-value">${score}/10</span>
+    `;
+    metricsEl.appendChild(row);
+  });
+}
+
+function renderDescription() {
+  const m = METHODS[currentMethod];
+  const color = getCSSColor(m.color);
+  descEl.style.borderLeftColor = color;
+  descEl.innerHTML = `
+    <h3 style="color: ${color}">${m.name}</h3>
+    <div>${m.desc}</div>
+    <div class="use-case"><b>数据形态：</b>${m.dataType} &nbsp;·&nbsp; <b>阶段：</b>${m.stage}</div>
+  `;
+}
+
+function renderTable() {
+  tbody.innerHTML = '';
+  Object.entries(METHODS).forEach(([key, m]) => {
+    const tr = document.createElement('tr');
+    if (key === currentMethod) tr.classList.add('active');
+    const color = getCSSColor(m.color);
+    tr.innerHTML = `
+      <td class="method-col" style="color: ${color}">${m.name}</td>
+      <td>${m.vram}</td>
+      <td>${m.scores.quality}/10</td>
+      <td>${m.complexity}</td>
+      <td>${m.dataType}</td>
+      <td>${m.stage}</td>
+    `;
+    tr.addEventListener('click', () => {
+      currentMethod = key;
+      tabs.forEach(t => t.classList.toggle('active', t.dataset.method === key));
+      render();
+    });
+    tr.style.cursor = 'pointer';
+    tbody.appendChild(tr);
+  });
+}
+
+function render() {
+  drawRadar();
+  renderMetrics();
+  renderDescription();
+  renderTable();
+}
+
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentMethod = tab.dataset.method;
+    render();
+  });
+});
+
+// Theme sync and initial render LAST
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

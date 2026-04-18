@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BERTopic 五步管线</title>
+<style>
+:root {
+  --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+  --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+  --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387;
+  --teal:#94e2d5;
+}
+.light {
+  --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+  --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+  --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b;
+  --teal:#179299;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px; padding: 14px;
+}
+.title { font-size: 14px; color: var(--mauve); margin-bottom: 4px; font-weight: 600; }
+.subtitle { color: var(--muted); font-size: 11px; margin-bottom: 14px; }
+
+.pipeline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
+.step {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px; cursor: pointer; transition: all 0.15s;
+}
+.step:hover { border-color: var(--mauve); }
+.step.active { border-color: var(--mauve); background: var(--overlay); box-shadow: 0 0 0 1px var(--mauve); }
+
+.step-n { color: var(--peach); font-size: 10px; margin-bottom: 4px; }
+.step-name { color: var(--blue); font-weight: 600; font-size: 12px; margin-bottom: 6px; }
+.step-tool { color: var(--teal); font-size: 10px; margin-bottom: 6px; }
+.shapes { margin-top: 6px; font-size: 10px; color: var(--muted); line-height: 1.5; }
+.shape-tag { display: inline-block; background: var(--bg); border: 1px solid var(--border); padding: 1px 5px; border-radius: 3px; color: var(--green); font-size: 10px; }
+
+.arrow-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px; }
+.arrow-cell { text-align: right; padding-right: 20px; color: var(--muted); font-size: 16px; }
+
+.detail {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  padding: 14px; min-height: 220px;
+}
+.detail-title { color: var(--mauve); font-size: 13px; margin-bottom: 8px; font-weight: 600; }
+.detail-code {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  padding: 10px; color: var(--fg); font-size: 11px; white-space: pre-wrap; line-height: 1.5;
+  margin-bottom: 10px;
+}
+.detail-code .kw { color: var(--mauve); }
+.detail-code .str { color: var(--green); }
+.detail-code .num { color: var(--peach); }
+.detail-code .cm { color: var(--muted); }
+.detail-desc { color: var(--fg); font-size: 11px; line-height: 1.6; }
+.detail-desc b { color: var(--yellow); }
+
+.io-row { display: flex; gap: 10px; margin-bottom: 10px; font-size: 11px; }
+.io-block { flex: 1; padding: 8px; border-radius: 3px; background: var(--bg); border: 1px solid var(--border); }
+.io-label { color: var(--muted); font-size: 10px; text-transform: uppercase; margin-bottom: 4px; }
+.io-shape { color: var(--green); font-family: inherit; }
+
+.legend { margin-top: 10px; color: var(--muted); font-size: 10px; line-height: 1.6; text-align: center; }
+</style>
+</head>
+<body>
+<div class="title">BERTopic 五步管线 — 每一步的输入输出形状</div>
+<div class="subtitle">点击任一步骤查看代码与维度变化。前 3 步是"聚类"（创建主题），后 2 步是"表示"（给主题命名）。</div>
+
+<div class="pipeline" id="pipeline"></div>
+<div class="detail" id="detail"></div>
+
+<div class="legend">
+  <span style="color: var(--blue)">■ Clustering (创建主题)</span> &nbsp;|&nbsp;
+  <span style="color: var(--peach)">■ Representation (命名主题)</span> &nbsp;|&nbsp;
+  <span style="color: var(--green)">■ Tensor Shape</span>
+</div>
+
+<script>
+const N = 44949;  // 示例文档数
+const steps = [
+  {
+    id: 1, group: 'cluster',
+    name: 'Embed documents', tool: 'SBERT (thenlper/gte-small)',
+    inp: 'N 条 abstract 字符串', out: '[N, 384] 稠密向量',
+    code: `<span class="kw">from</span> sentence_transformers <span class="kw">import</span> SentenceTransformer
+
+model = SentenceTransformer(<span class="str">"thenlper/gte-small"</span>)
+embeddings = model.encode(abstracts)
+<span class="cm"># embeddings.shape == (44949, 384)</span>`,
+    desc: '把每篇 abstract 转成 384 维语义向量。选用 MTEB clustering 榜上小而强的模型。**这一步决定整个 pipeline 的语义质量**。'
+  },
+  {
+    id: 2, group: 'cluster',
+    name: 'Reduce dim', tool: 'UMAP',
+    inp: '[N, 384]', out: '[N, 5]',
+    code: `<span class="kw">from</span> umap <span class="kw">import</span> UMAP
+
+umap_model = UMAP(
+    n_components=<span class="num">5</span>,
+    min_dist=<span class="num">0.0</span>,
+    metric=<span class="str">'cosine'</span>,
+    random_state=<span class="num">42</span>,
+)
+reduced = umap_model.fit_transform(embeddings)
+<span class="cm"># reduced.shape == (44949, 5)</span>`,
+    desc: '384 → 5 维。**不用 PCA**，因为 UMAP 能保留非线性流形结构（局部+全局）。min_dist=0 让同类点贴得更近，方便下一步聚类。'
+  },
+  {
+    id: 3, group: 'cluster',
+    name: 'Cluster', tool: 'HDBSCAN',
+    inp: '[N, 5]', out: '每文档一个 cluster id\n(含 -1 = outlier)',
+    code: `<span class="kw">from</span> hdbscan <span class="kw">import</span> HDBSCAN
+
+hdbscan_model = HDBSCAN(
+    min_cluster_size=<span class="num">50</span>,
+    metric=<span class="str">"euclidean"</span>,
+    cluster_selection_method=<span class="str">"eom"</span>,
+).fit(reduced)
+
+clusters = hdbscan_model.labels_
+<span class="cm"># len(set(clusters)) == 156 个簇 + 一个 -1 簇</span>`,
+    desc: '基于密度，**不需要预设 k**。能识别 outlier（label=-1），不强行分配。跟 K-Means 的根本区别：K-Means 要你猜"44949 篇论文分几类"，没人答得上。'
+  },
+  {
+    id: 4, group: 'repr',
+    name: 'Tokenize + Count', tool: 'CountVectorizer (bag-of-words)',
+    inp: 'N 条文档 + cluster 分配', out: '[K_clusters, V_vocab] 频次矩阵',
+    code: `<span class="kw">from</span> sklearn.feature_extraction.text <span class="kw">import</span> CountVectorizer
+
+<span class="cm"># BERTopic 内部调用</span>
+vectorizer = CountVectorizer(
+    stop_words=<span class="str">"english"</span>,
+    ngram_range=(<span class="num">1</span>, <span class="num">2</span>),
+)
+<span class="cm"># 把每个簇当作一篇"大文档"，算 term frequency</span>`,
+    desc: '回到老派 bag-of-words。**关键技巧**：把同一簇的所有文档拼成一篇大文档，这样频率统计变成"簇级" (class-based term frequency)，而不是"文档级"。'
+  },
+  {
+    id: 5, group: 'repr',
+    name: 'Weight (c-TF-IDF)', tool: 'class-based TF-IDF',
+    inp: '[K_clusters, V_vocab]', out: '每簇 Top-N 关键词 + 权重',
+    code: `<span class="cm"># c-TF-IDF 核心公式（简化）:</span>
+<span class="cm"># tf_x_c = 词 x 在簇 c 中的频率</span>
+<span class="cm"># idf_x  = log(A / cf_x + 1)</span>
+<span class="cm">#   A    = 所有词的平均频率</span>
+<span class="cm">#   cf_x = 词 x 在所有簇的总频率</span>
+
+<span class="cm"># 结果：跨簇常见的 stop-words 权重被压低，</span>
+<span class="cm"># 簇内独有的专业词权重被拔高。</span>
+topic_model.get_topic(<span class="num">0</span>)
+<span class="cm"># [('speech', 0.028), ('asr', 0.019),</span>
+<span class="cm">#  ('recognition', 0.013), ...]</span>`,
+    desc: '把 TF-IDF 从"文档级"搬到"簇级"。**这是 BERTopic 最核心的创新**：无监督、不需训练、毫秒级计算出每簇的代表词。'
+  },
+  {
+    id: 6, group: 'repr',
+    name: '(可选) LLM 重排', tool: 'Representation block',
+    inp: '每簇 Top-N 关键词', out: '人类可读的主题标题',
+    code: `<span class="kw">from</span> bertopic.representation <span class="kw">import</span> OpenAI
+
+prompt = <span class="str">"""Docs: [DOCUMENTS]
+Keywords: [KEYWORDS]
+Give a short label for this topic."""</span>
+
+representation = OpenAI(
+    model=<span class="str">"gpt-3.5-turbo"</span>,
+    prompt=prompt,
+)
+topic_model.update_topics(
+    abstracts,
+    representation_model=representation,
+)
+<span class="cm"># Topic 0: "Automatic Speech Recognition"</span>`,
+    desc: '**可选第六块乐高**。每个主题**只调用一次** LLM，所以即使有几万文档，也只有几百次调用。这就是 BERTopic "把贵操作放在数据量最小层"的设计哲学。'
+  },
+];
+
+const pipelineEl = document.getElementById('pipeline');
+const detailEl = document.getElementById('detail');
+
+function render(id) {
+  Array.from(pipelineEl.children).forEach(c => c.classList.toggle('active', +c.dataset.id === id));
+  const s = steps.find(x => x.id === id);
+  if (!s) return;
+  detailEl.innerHTML = `
+    <div class="detail-title">Step ${s.id}. ${s.name} — ${s.tool}</div>
+    <div class="io-row">
+      <div class="io-block"><div class="io-label">Input</div><div class="io-shape">${s.inp.replace(/\n/g, '<br>')}</div></div>
+      <div class="io-block"><div class="io-label">Output</div><div class="io-shape">${s.out.replace(/\n/g, '<br>')}</div></div>
+    </div>
+    <div class="detail-code">${s.code}</div>
+    <div class="detail-desc">${s.desc.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</div>
+  `;
+}
+
+// Build 6 steps (5 mandatory + 1 optional representation block)
+// Layout: 5 columns but step 6 spans optionally — use 5 cols first, step 6 in same row by making grid 6 cols
+pipelineEl.style.gridTemplateColumns = 'repeat(6, 1fr)';
+
+steps.forEach(s => {
+  const el = document.createElement('div');
+  el.className = 'step';
+  el.dataset.id = s.id;
+  const color = s.group === 'cluster' ? 'var(--blue)' : 'var(--peach)';
+  el.innerHTML = `
+    <div class="step-n" style="color: ${color}">STEP ${s.id}${s.id === 6 ? ' (opt.)' : ''}</div>
+    <div class="step-name">${s.name}</div>
+    <div class="step-tool">${s.tool}</div>
+    <div class="shapes">
+      in: <span class="shape-tag">${s.inp.split('\n')[0]}</span><br>
+      out: <span class="shape-tag">${s.out.split('\n')[0]}</span>
+    </div>
+  `;
+  el.addEventListener('click', () => render(s.id));
+  pipelineEl.appendChild(el);
+});
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+}
+syncTheme();
+render(1);
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

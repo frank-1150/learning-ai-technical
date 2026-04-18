@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoRA 低秩分解原理</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #6c7086;
+  --surface: #181825;
+  --border: #45475a;
+  --overlay: #313244;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --blue: #89b4fa;
+  --yellow: #f9e2af;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+}
+.light {
+  --bg: #eff1f5;
+  --fg: #4c4f69;
+  --muted: #8c8fa1;
+  --surface: #e6e9ef;
+  --border: #ccd0da;
+  --overlay: #dce0e8;
+  --green: #40a02b;
+  --red: #d20f39;
+  --blue: #1e66f5;
+  --yellow: #df8e1d;
+  --mauve: #8839ef;
+  --peach: #fe640b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  padding: 16px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.controls {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.control-group { display: flex; align-items: center; gap: 10px; }
+
+.control-group label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.rank-btn {
+  background: var(--overlay);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.rank-btn:hover { background: var(--border); }
+.rank-btn.active {
+  background: var(--mauve);
+  color: var(--bg);
+  border-color: var(--mauve);
+  font-weight: 600;
+}
+
+.dim-slider {
+  width: 140px;
+  accent-color: var(--blue);
+}
+
+.main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+.stats {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--overlay);
+  border-radius: 4px;
+}
+.stat-row.highlight {
+  background: var(--mauve);
+  color: var(--bg);
+  font-weight: 600;
+}
+.stat-label { color: var(--muted); }
+.stat-row.highlight .stat-label { color: var(--bg); }
+.stat-value { font-weight: 600; }
+
+.formula {
+  background: var(--overlay);
+  border-left: 3px solid var(--blue);
+  padding: 8px 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  border-radius: 4px;
+}
+.formula b { color: var(--peach); }
+
+.comparison {
+  margin-top: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 100px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.bar-track {
+  height: 18px;
+  background: var(--overlay);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.bar-fill {
+  height: 100%;
+  transition: width 0.4s ease;
+  border-radius: 3px;
+}
+.bar-value { text-align: right; color: var(--fg); font-weight: 600; }
+.bar-label { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>LoRA 低秩分解：ΔW = B · A</h1>
+<div class="subtitle">拖动滑块改变矩阵维度 d，点击 rank 按钮调整压缩比</div>
+
+<div class="controls">
+  <div class="control-group">
+    <label>维度 d:</label>
+    <input type="range" id="dim-slider" class="dim-slider" min="32" max="256" step="16" value="128">
+    <span id="dim-value" style="color: var(--blue); font-weight: 600;">128</span>
+  </div>
+  <div class="control-group">
+    <label>Rank r:</label>
+    <button class="rank-btn" data-r="2">2</button>
+    <button class="rank-btn active" data-r="4">4</button>
+    <button class="rank-btn" data-r="8">8</button>
+    <button class="rank-btn" data-r="16">16</button>
+    <button class="rank-btn" data-r="32">32</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <div class="panel-title">Full Fine-Tuning：更新整个 W</div>
+    <canvas id="canvas-full" width="360" height="240"></canvas>
+    <div class="stats">
+      <div class="stat-row">
+        <span class="stat-label">矩阵形状</span>
+        <span class="stat-value" id="full-shape">128 × 128</span>
+      </div>
+      <div class="stat-row highlight">
+        <span class="stat-label">可训练参数</span>
+        <span class="stat-value" id="full-params">16,384</span>
+      </div>
+    </div>
+    <div class="formula">
+      训练目标：学习 <b>ΔW ∈ R<sup>d×d</sup></b><br>
+      全部 d² 个元素都要更新、存梯度、存优化器状态。
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">LoRA：ΔW ≈ B · A（两个小矩阵）</div>
+    <canvas id="canvas-lora" width="360" height="240"></canvas>
+    <div class="stats">
+      <div class="stat-row">
+        <span class="stat-label">B 形状</span>
+        <span class="stat-value" id="b-shape">128 × 4</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">A 形状</span>
+        <span class="stat-value" id="a-shape">4 × 128</span>
+      </div>
+      <div class="stat-row highlight" style="grid-column: 1 / -1;">
+        <span class="stat-label">可训练参数 (2×d×r)</span>
+        <span class="stat-value" id="lora-params">1,024</span>
+      </div>
+    </div>
+    <div class="formula">
+      冻结 W，训练 <b>A ∈ R<sup>r×d</sup>, B ∈ R<sup>d×r</sup></b><br>
+      前向：<b>h = W·x + B·A·x</b>，推理时可 merge 为 W' = W + BA
+    </div>
+  </div>
+</div>
+
+<div class="comparison">
+  <div class="panel-title" style="margin-bottom: 12px;">参数量对比</div>
+  <div class="bar-row">
+    <span class="bar-label">Full FT</span>
+    <div class="bar-track"><div class="bar-fill" id="bar-full" style="background: var(--red);"></div></div>
+    <span class="bar-value" id="val-full">16,384</span>
+  </div>
+  <div class="bar-row">
+    <span class="bar-label">LoRA</span>
+    <div class="bar-track"><div class="bar-fill" id="bar-lora" style="background: var(--green);"></div></div>
+    <span class="bar-value" id="val-lora">1,024</span>
+  </div>
+  <div class="bar-row">
+    <span class="bar-label" style="color: var(--peach); font-weight: 600;">压缩倍数</span>
+    <div class="bar-track"><div class="bar-fill" id="bar-ratio" style="background: var(--mauve);"></div></div>
+    <span class="bar-value" id="val-ratio" style="color: var(--peach);">16×</span>
+  </div>
+</div>
+
+<script>
+// 1. State
+let state = { d: 128, r: 4 };
+
+const dimSlider = document.getElementById('dim-slider');
+const dimValue = document.getElementById('dim-value');
+const rankBtns = document.querySelectorAll('.rank-btn');
+
+const canvasFull = document.getElementById('canvas-full');
+const canvasLora = document.getElementById('canvas-lora');
+
+const COLORS = () => {
+  const s = getComputedStyle(document.body);
+  return {
+    bg: s.getPropertyValue('--bg').trim(),
+    fg: s.getPropertyValue('--fg').trim(),
+    muted: s.getPropertyValue('--muted').trim(),
+    overlay: s.getPropertyValue('--overlay').trim(),
+    border: s.getPropertyValue('--border').trim(),
+    green: s.getPropertyValue('--green').trim(),
+    red: s.getPropertyValue('--red').trim(),
+    blue: s.getPropertyValue('--blue').trim(),
+    mauve: s.getPropertyValue('--mauve').trim(),
+    peach: s.getPropertyValue('--peach').trim(),
+    yellow: s.getPropertyValue('--yellow').trim(),
+  };
+};
+
+function drawMatrix(ctx, x, y, w, h, color, label, labelBelow) {
+  const c = COLORS();
+  // fill with gradient-like cells
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+  // grid pattern
+  ctx.strokeStyle = c.bg;
+  ctx.lineWidth = 0.5;
+  const cells = 8;
+  for (let i = 1; i < cells; i++) {
+    ctx.beginPath();
+    ctx.moveTo(x + (w * i / cells), y);
+    ctx.lineTo(x + (w * i / cells), y + h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y + (h * i / cells));
+    ctx.lineTo(x + w, y + (h * i / cells));
+    ctx.stroke();
+  }
+  // border
+  ctx.strokeStyle = c.fg;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, w, h);
+  // label
+  if (label) {
+    ctx.fillStyle = c.fg;
+    ctx.font = 'bold 13px "SF Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x + w / 2, y - 6);
+  }
+  if (labelBelow) {
+    ctx.fillStyle = c.muted;
+    ctx.font = '11px "SF Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(labelBelow, x + w / 2, y + h + 14);
+  }
+}
+
+function drawFull() {
+  const ctx = canvasFull.getContext('2d');
+  const c = COLORS();
+  const W = canvasFull.width;
+  const H = canvasFull.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const side = 160;
+  const x = (W - side) / 2;
+  const y = (H - side) / 2 + 10;
+  drawMatrix(ctx, x, y, side, side, c.red + 'bb', 'ΔW (全量更新)', `${state.d} × ${state.d}`);
+}
+
+function drawLora() {
+  const ctx = canvasLora.getContext('2d');
+  const c = COLORS();
+  const W = canvasLora.width;
+  const H = canvasLora.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const fullSide = 160;
+  const rFrac = Math.max(0.04, state.r / state.d);
+  const bWidth = Math.max(8, fullSide * rFrac);
+  const aHeight = Math.max(8, fullSide * rFrac);
+
+  // B (d × r)
+  const bx = 30;
+  const by = (H - fullSide) / 2 + 10;
+  drawMatrix(ctx, bx, by, bWidth, fullSide, c.blue + 'cc', 'B', `${state.d} × ${state.r}`);
+
+  // =
+  ctx.fillStyle = c.fg;
+  ctx.font = 'bold 20px "SF Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('·', bx + bWidth + 20, by + fullSide / 2 + 6);
+
+  // A (r × d)
+  const ax = bx + bWidth + 40;
+  const ay = by + (fullSide - aHeight) / 2;
+  drawMatrix(ctx, ax, ay, fullSide, aHeight, c.green + 'cc', 'A', `${state.r} × ${state.d}`);
+
+  // =
+  ctx.fillStyle = c.fg;
+  ctx.font = 'bold 20px "SF Mono", monospace';
+  ctx.fillText('=', ax + fullSide + 14, by + fullSide / 2 + 6);
+
+  // Result (d × d, outlined dashed)
+  const rx = ax + fullSide + 30;
+  const ry = by;
+  ctx.save();
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = c.mauve;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(rx, ry, 60, fullSide);
+  ctx.restore();
+  ctx.fillStyle = c.mauve;
+  ctx.font = '11px "SF Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ΔW', rx + 30, ry - 6);
+  ctx.fillStyle = c.muted;
+  ctx.fillText('(低秩)', rx + 30, ry + fullSide + 14);
+}
+
+function formatNum(n) {
+  return n.toLocaleString();
+}
+
+function render() {
+  // canvases
+  drawFull();
+  drawLora();
+
+  // stats
+  const fullParams = state.d * state.d;
+  const loraParams = 2 * state.d * state.r;
+  const ratio = fullParams / loraParams;
+
+  document.getElementById('full-shape').textContent = `${state.d} × ${state.d}`;
+  document.getElementById('full-params').textContent = formatNum(fullParams);
+  document.getElementById('b-shape').textContent = `${state.d} × ${state.r}`;
+  document.getElementById('a-shape').textContent = `${state.r} × ${state.d}`;
+  document.getElementById('lora-params').textContent = formatNum(loraParams);
+
+  // bars
+  document.getElementById('bar-full').style.width = '100%';
+  document.getElementById('val-full').textContent = formatNum(fullParams);
+  const loraPct = (loraParams / fullParams) * 100;
+  document.getElementById('bar-lora').style.width = Math.max(1, loraPct) + '%';
+  document.getElementById('val-lora').textContent = formatNum(loraParams);
+  const ratioPct = Math.min(100, Math.log2(ratio) * 10);
+  document.getElementById('bar-ratio').style.width = ratioPct + '%';
+  document.getElementById('val-ratio').textContent = ratio.toFixed(1) + '×';
+}
+
+// events
+dimSlider.addEventListener('input', (e) => {
+  state.d = parseInt(e.target.value);
+  dimValue.textContent = state.d;
+  // clamp r
+  if (state.r > state.d / 2) {
+    state.r = Math.max(2, Math.floor(state.d / 4));
+    rankBtns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.r) === state.r));
+  }
+  render();
+});
+
+rankBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    rankBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.r = parseInt(btn.dataset.r);
+    render();
+  });
+});
+
+// Theme sync and initial render LAST
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

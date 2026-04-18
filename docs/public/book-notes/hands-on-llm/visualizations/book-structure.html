@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hands-On LLM — 全书结构</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #6c7086;
+  --surface: #181825;
+  --border: #45475a;
+  --overlay: #313244;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --blue: #89b4fa;
+  --yellow: #f9e2af;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+  --teal: #94e2d5;
+  --sky: #89dceb;
+}
+.light {
+  --bg: #eff1f5;
+  --fg: #4c4f69;
+  --muted: #8c8fa1;
+  --surface: #e6e9ef;
+  --border: #ccd0da;
+  --overlay: #dce0e8;
+  --green: #40a02b;
+  --red: #d20f39;
+  --blue: #1e66f5;
+  --yellow: #df8e1d;
+  --mauve: #8839ef;
+  --peach: #fe640b;
+  --teal: #179299;
+  --sky: #04a5e5;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  padding: 16px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 4px;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.parts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 900px) {
+  .parts-row { grid-template-columns: 1fr; }
+}
+
+.part-col {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.part-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--overlay);
+}
+
+.part-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.part-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.part-desc {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.chapters-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.chapter-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s, background 0.15s;
+  user-select: none;
+}
+
+.chapter-card:hover {
+  background: var(--overlay);
+  transform: translateX(2px);
+}
+
+.chapter-card.selected {
+  background: var(--overlay);
+}
+
+.chapter-num {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.chapter-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.35;
+}
+
+.detail-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-height: 120px;
+}
+
+.detail-empty {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 12px;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.detail-heading {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.detail-chapter {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.detail-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.detail-article {
+  display: inline-block;
+  padding: 6px 10px;
+  background: var(--overlay);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--fg);
+  margin-bottom: 8px;
+}
+
+.detail-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.topic-tag {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.footer-note {
+  margin-top: 12px;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+</style>
+</head>
+<body>
+<script>
+// 1. Data & helpers ---------------------------------------------------------
+
+const PARTS = [
+  {
+    label: "Part I",
+    name: "Understanding Language Models",
+    desc: '回答 "How do large language models work?" — 底层原理',
+    color: "#89b4fa",          // blue
+    colorLight: "#1e66f5",
+    chapters: [
+      {
+        num: "Ch 1",
+        title: "An Introduction to Large Language Models",
+        article: "LLM 基础与简史",
+        articleSlug: "intro-and-history",
+        topics: ["Language AI 简史", "Bag-of-Words", "Word2Vec", "Attention Is All You Need", "生成式 AI 元年"]
+      },
+      {
+        num: "Ch 2",
+        title: "Tokens and Embeddings",
+        article: "Tokens 与 Embeddings",
+        articleSlug: "tokens-embeddings",
+        topics: ["Tokenizer 对比", "Token Embedding", "Text Embedding", "Word2Vec 对比学习", "推荐系统"]
+      },
+      {
+        num: "Ch 3",
+        title: "Looking Inside Large Language Models",
+        article: "Transformer 架构内部",
+        articleSlug: "transformer-internals",
+        topics: ["前向传播", "采样/解码", "KV Cache", "Transformer Block", "RoPE 位置编码"]
+      }
+    ]
+  },
+  {
+    label: "Part II",
+    name: "Using Pretrained Language Models",
+    desc: "用预训练模型做下游任务 — 应用开发",
+    color: "#a6e3a1",          // green
+    colorLight: "#40a02b",
+    chapters: [
+      {
+        num: "Ch 4",
+        title: "Text Classification",
+        article: "文本分类与聚类",
+        articleSlug: "classification-clustering",
+        topics: ["Representation 模型分类", "Task-specific 模型", "生成模型分类", "ChatGPT 分类"]
+      },
+      {
+        num: "Ch 5",
+        title: "Text Clustering and Topic Modeling",
+        article: "文本分类与聚类",
+        articleSlug: "classification-clustering",
+        topics: ["Embedding 聚类", "UMAP 降维", "HDBSCAN", "BERTopic 主题建模"]
+      },
+      {
+        num: "Ch 6",
+        title: "Prompt Engineering",
+        article: "Prompt Engineering 与推理技巧",
+        articleSlug: "prompt-engineering",
+        topics: ["Prompt 要素", "In-Context Learning", "CoT", "Self-Consistency", "Tree-of-Thought"]
+      },
+      {
+        num: "Ch 7",
+        title: "Advanced Text Generation Techniques and Tools",
+        article: "LangChain 链、记忆与 Agent",
+        articleSlug: "langchain-chains-agents",
+        topics: ["Chains", "Memory (Buffer/Window/Summary)", "ReAct Agent"]
+      },
+      {
+        num: "Ch 8",
+        title: "Semantic Search and Retrieval-Augmented Generation",
+        article: "语义搜索与 RAG",
+        articleSlug: "semantic-search-rag",
+        topics: ["Dense Retrieval", "Reranker", "RAG 构建", "RAG 评估"]
+      },
+      {
+        num: "Ch 9",
+        title: "Multimodal Large Language Models",
+        article: "多模态大模型",
+        articleSlug: "multimodal-llms",
+        topics: ["Vision Transformer", "CLIP", "OpenCLIP", "BLIP-2", "多模态对话"]
+      }
+    ]
+  },
+  {
+    label: "Part III",
+    name: "Training and Fine-Tuning Language Models",
+    desc: "训练自己的模型 — 深度定制",
+    color: "#cba6f7",          // mauve
+    colorLight: "#8839ef",
+    chapters: [
+      {
+        num: "Ch 10",
+        title: "Creating Text Embedding Models",
+        article: "训练 Embedding 与微调表示模型",
+        articleSlug: "embedding-representation-training",
+        topics: ["对比学习", "SBERT", "Loss 函数", "Augmented SBERT", "TSDAE"]
+      },
+      {
+        num: "Ch 11",
+        title: "Fine-Tuning Representation Models for Classification",
+        article: "训练 Embedding 与微调表示模型",
+        articleSlug: "embedding-representation-training",
+        topics: ["BERT 微调", "Freezing Layers", "SetFit 少样本", "MLM 继续预训练", "NER 微调"]
+      },
+      {
+        num: "Ch 12",
+        title: "Fine-Tuning Generation Models",
+        article: "微调生成模型 SFT/LoRA/DPO",
+        articleSlug: "fine-tuning-generation",
+        topics: ["SFT 全量微调", "PEFT/LoRA", "QLoRA 指令微调", "奖励模型", "RLHF", "DPO"]
+      }
+    ]
+  }
+];
+
+let selected = null;  // { partIdx, chIdx }
+
+function tagStyle(color) {
+  return `background:${color}22; color:${color}; border-color:${color}44;`;
+}
+
+function render() {
+  const isLight = document.body.classList.contains('light');
+
+  let html = `<h1>Hands-On Large Language Models — 全书结构导航</h1>
+<p class="subtitle">Jay Alammar &amp; Maarten Grootendorst · O'Reilly 2024 · 3 大部分 · 12 章 · 10 篇阅读笔记</p>
+<div class="parts-row">`;
+
+  PARTS.forEach((part, pi) => {
+    const color = isLight ? part.colorLight : part.color;
+    html += `<div class="part-col">
+  <div class="part-header" style="border-top:3px solid ${color}">
+    <div class="part-label" style="color:${color}">${part.label}</div>
+    <div class="part-name">${part.name}</div>
+    <div class="part-desc">${part.desc}</div>
+  </div>
+  <div class="chapters-list">`;
+
+    part.chapters.forEach((ch, ci) => {
+      const isSel = selected && selected.partIdx === pi && selected.chIdx === ci;
+      html += `<div class="chapter-card${isSel ? ' selected' : ''}"
+           style="border-left-color:${color}"
+           onclick="selectChapter(${pi}, ${ci})">
+        <div class="chapter-num" style="color:${color}">${ch.num}</div>
+        <div class="chapter-title">${ch.title}</div>
+      </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  html += `</div>`;
+
+  // Detail panel
+  html += `<div class="detail-panel">`;
+  if (!selected) {
+    html += `<div class="detail-empty">点击任一章节，查看对应的阅读笔记与核心主题</div>`;
+  } else {
+    const part = PARTS[selected.partIdx];
+    const ch = part.chapters[selected.chIdx];
+    const color = isLight ? part.colorLight : part.color;
+    html += `<div class="detail-heading" style="color:${color}">${part.label} · ${ch.num}</div>
+      <div class="detail-chapter">${ch.title}</div>
+      <div class="detail-label">对应阅读笔记</div>
+      <div class="detail-article">📖 ${ch.article}</div>
+      <div class="detail-label">核心主题</div>
+      <div class="detail-topics">`;
+    ch.topics.forEach(t => {
+      html += `<span class="topic-tag" style="${tagStyle(color)}">${t}</span>`;
+    });
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  html += `<p class="footer-note">点击章节卡片查看详情 · 章节左侧色条对应 Part 颜色</p>`;
+  document.body.innerHTML = html;
+}
+
+function selectChapter(partIdx, chIdx) {
+  if (selected && selected.partIdx === partIdx && selected.chIdx === chIdx) {
+    selected = null;
+  } else {
+    selected = { partIdx, chIdx };
+  }
+  render();
+}
+
+// Expose handlers on window so inline onclick can find them after innerHTML replace
+window.selectChapter = selectChapter;
+
+// 2. Theme sync & init (MUST be last) --------------------------------------
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+  render();
+}
+
+syncTheme();
+
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>

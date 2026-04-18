@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>ReAct Agent 交互式演示</title>
+<style>
+  :root {
+    --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+    --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+    --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387;
+  }
+  .light {
+    --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+    --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+    --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 14px 18px 18px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 14px; margin: 0 0 8px; color: var(--fg); }
+  .controls {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  select, button {
+    font-family: inherit;
+    font-size: 12px;
+    background: var(--surface);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--overlay); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--blue); color: var(--bg); border-color: var(--blue); font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.1); }
+  .question-bar {
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--blue);
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  .question-bar .label { color: var(--muted); font-size: 11px; }
+  .question-bar .text { color: var(--fg); margin-top: 3px; }
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .cycle-label {
+    color: var(--muted);
+    font-size: 11px;
+    margin: 4px 0 2px;
+    padding-left: 2px;
+  }
+  .step {
+    padding: 6px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    animation: fadein 0.25s ease-out;
+  }
+  @keyframes fadein {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .step .tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-right: 6px;
+    letter-spacing: 0.5px;
+  }
+  .step.thought { border-left: 3px solid var(--mauve); }
+  .step.thought .tag { background: var(--mauve); color: var(--bg); }
+  .step.action { border-left: 3px solid var(--peach); }
+  .step.action .tag { background: var(--peach); color: var(--bg); }
+  .step.observation { border-left: 3px solid var(--yellow); }
+  .step.observation .tag { background: var(--yellow); color: var(--bg); }
+  .step.final { border-left: 3px solid var(--green); background: var(--overlay); }
+  .step.final .tag { background: var(--green); color: var(--bg); }
+  .step .body { color: var(--fg); }
+  .step .body .code {
+    background: var(--overlay);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--blue);
+  }
+  .stats {
+    display: flex;
+    gap: 14px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .stat-item { display: flex; gap: 5px; align-items: baseline; }
+  .stat-item .label { color: var(--muted); font-size: 11px; }
+  .stat-item .val { color: var(--fg); font-weight: 600; }
+  .stat-item .val.hl { color: var(--green); }
+</style>
+</head>
+<body>
+
+<h1>ReAct Agent 循环：Thought → Action → Observation</h1>
+
+<div class="controls">
+  <select id="scenario"></select>
+  <button id="next" class="primary">下一步</button>
+  <button id="auto">自动播放</button>
+  <button id="reset">重置</button>
+</div>
+
+<div class="question-bar">
+  <div class="label">用户问题</div>
+  <div class="text" id="question"></div>
+</div>
+
+<div class="steps" id="steps"></div>
+
+<div class="stats">
+  <div class="stat-item"><span class="label">LLM 调用：</span><span class="val" id="stat-calls">0</span></div>
+  <div class="stat-item"><span class="label">工具调用：</span><span class="val" id="stat-tools">0</span></div>
+  <div class="stat-item"><span class="label">累计 token：</span><span class="val" id="stat-tokens">0</span></div>
+  <div class="stat-item"><span class="label">当前阶段：</span><span class="val hl" id="stat-phase">待开始</span></div>
+</div>
+
+<script>
+// Scenarios: each has a question and an ordered list of steps
+const SCENARIOS = {
+  macbook: {
+    question: "一台 MacBook Pro 目前的美元价格是多少？按 1 USD = 0.85 EUR 的汇率换算成欧元是多少？",
+    steps: [
+      { type: "thought",     body: "我需要先搜索 MacBook Pro 的当前美元价格，然后再用计算器换算成欧元。", tokens: 62 },
+      { type: "action",      body: "Action: <span class='code'>duckduckgo_search</span>  Input: <span class='code'>\"current price MacBook Pro USD\"</span>", tokens: 28 },
+      { type: "observation", body: "搜索结果：\"MacBook Pro 起售价 $2,249.00，Best Buy 在售…\"", tokens: 45 },
+      { type: "thought",     body: "拿到了美元价格 $2,249。现在用计算器乘以 0.85 汇率。", tokens: 40 },
+      { type: "action",      body: "Action: <span class='code'>calculator</span>  Input: <span class='code'>2249.00 * 0.85</span>", tokens: 22 },
+      { type: "observation", body: "Answer: <b>1911.65</b>", tokens: 14 },
+      { type: "thought",     body: "我已经得到了最终答案。", tokens: 18 },
+      { type: "final",       body: "MacBook Pro 的美国售价是 $2,249.00；按 0.85 的汇率，约合 1911.65 EUR。", tokens: 58 },
+    ],
+  },
+  nobel: {
+    question: "2023 年诺贝尔物理学奖得主之一 Anne L'Huillier 的年龄的平方是多少？",
+    steps: [
+      { type: "thought",     body: "我需要先查到 Anne L'Huillier 的出生年份，再计算她的年龄及其平方。", tokens: 55 },
+      { type: "action",      body: "Action: <span class='code'>wikipedia_search</span>  Input: <span class='code'>\"Anne L'Huillier birth year\"</span>", tokens: 30 },
+      { type: "observation", body: "Wikipedia 条目：\"Anne L'Huillier 生于 1958 年 8 月 16 日，法国物理学家……\"", tokens: 50 },
+      { type: "thought",     body: "她生于 1958。2023 年时她 65 岁。现在用计算器算 65 的平方。", tokens: 48 },
+      { type: "action",      body: "Action: <span class='code'>calculator</span>  Input: <span class='code'>65 ** 2</span>", tokens: 18 },
+      { type: "observation", body: "Answer: <b>4225</b>", tokens: 10 },
+      { type: "thought",     body: "我已经得到了最终答案。", tokens: 18 },
+      { type: "final",       body: "Anne L'Huillier 在 2023 年获奖时 65 岁，她的年龄平方是 4225。", tokens: 40 },
+    ],
+  },
+  weather: {
+    question: "纽约今天的温度（华氏度）换算成摄氏度是多少？",
+    steps: [
+      { type: "thought",     body: "需要先获取纽约当前华氏温度，然后用公式 (F - 32) × 5/9 换算。", tokens: 55 },
+      { type: "action",      body: "Action: <span class='code'>weather_api</span>  Input: <span class='code'>\"New York\"</span>", tokens: 22 },
+      { type: "observation", body: "API 返回：{\"city\":\"New York\",\"temp_f\":68}", tokens: 30 },
+      { type: "thought",     body: "温度是 68°F。接下来算 (68 - 32) × 5/9。", tokens: 32 },
+      { type: "action",      body: "Action: <span class='code'>calculator</span>  Input: <span class='code'>(68 - 32) * 5 / 9</span>", tokens: 24 },
+      { type: "observation", body: "Answer: <b>20.0</b>", tokens: 10 },
+      { type: "thought",     body: "得到最终答案。", tokens: 14 },
+      { type: "final",       body: "纽约今天的温度 68°F，约合 20°C。", tokens: 30 },
+    ],
+  },
+};
+
+const LABELS = {
+  thought: "THOUGHT",
+  action: "ACTION",
+  observation: "OBSERVATION",
+  final: "FINAL ANSWER",
+};
+const PHASE_COLOR = {
+  thought: "推理中 (Thought)",
+  action: "调用工具 (Action)",
+  observation: "观察结果 (Observation)",
+  final: "已结束",
+};
+
+let currentKey = "macbook";
+let cursor = 0;           // next step to reveal
+let llmCalls = 0;
+let toolCalls = 0;
+let tokens = 0;
+let autoTimer = null;
+
+const $scenario = document.getElementById("scenario");
+const $steps = document.getElementById("steps");
+const $next = document.getElementById("next");
+const $auto = document.getElementById("auto");
+const $reset = document.getElementById("reset");
+const $question = document.getElementById("question");
+const $calls = document.getElementById("stat-calls");
+const $tools = document.getElementById("stat-tools");
+const $tokens = document.getElementById("stat-tokens");
+const $phase = document.getElementById("stat-phase");
+
+function populateScenarios() {
+  const opts = [
+    ["macbook", "MacBook 价格换算 (2 轮)"],
+    ["nobel",   "诺贝尔奖得主年龄平方 (2 轮)"],
+    ["weather", "温度单位转换 (2 轮)"],
+  ];
+  for (const [k, label] of opts) {
+    const o = document.createElement("option");
+    o.value = k; o.textContent = label;
+    $scenario.appendChild(o);
+  }
+}
+
+function reset() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; $auto.textContent = "自动播放"; }
+  cursor = 0; llmCalls = 0; toolCalls = 0; tokens = 0;
+  $steps.innerHTML = "";
+  const sc = SCENARIOS[currentKey];
+  $question.textContent = sc.question;
+  updateStats("待开始");
+  $next.disabled = false;
+  $next.textContent = "下一步";
+  // track printed cycles
+  _cyclePrinted = 0;
+}
+
+let _cyclePrinted = 0;
+function stepOnce() {
+  const sc = SCENARIOS[currentKey];
+  if (cursor >= sc.steps.length) {
+    $next.disabled = true;
+    return false;
+  }
+  const step = sc.steps[cursor];
+  // Add cycle label when starting a new thought that isn't the final one
+  if (step.type === "thought" && cursor < sc.steps.length - 1) {
+    _cyclePrinted += 1;
+    const lbl = document.createElement("div");
+    lbl.className = "cycle-label";
+    lbl.textContent = "--- ReAct Cycle " + _cyclePrinted + " ---";
+    $steps.appendChild(lbl);
+  }
+  const div = document.createElement("div");
+  div.className = "step " + step.type;
+  div.innerHTML = '<span class="tag">' + LABELS[step.type] + '</span><span class="body">' + step.body + '</span>';
+  $steps.appendChild(div);
+  $steps.scrollTop = $steps.scrollHeight;
+
+  // Update counters
+  if (step.type === "thought" || step.type === "final") llmCalls += 1;
+  if (step.type === "action") toolCalls += 1;
+  tokens += step.tokens || 0;
+
+  updateStats(PHASE_COLOR[step.type]);
+
+  cursor += 1;
+  if (cursor >= sc.steps.length) {
+    $next.disabled = true;
+    $next.textContent = "已完成";
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; $auto.textContent = "自动播放"; }
+  }
+  return true;
+}
+
+function updateStats(phase) {
+  $calls.textContent = llmCalls;
+  $tools.textContent = toolCalls;
+  $tokens.textContent = tokens;
+  $phase.textContent = phase;
+}
+
+$next.addEventListener("click", stepOnce);
+$reset.addEventListener("click", reset);
+$auto.addEventListener("click", () => {
+  if (autoTimer) {
+    clearInterval(autoTimer); autoTimer = null; $auto.textContent = "自动播放";
+  } else {
+    $auto.textContent = "暂停";
+    autoTimer = setInterval(() => {
+      const ok = stepOnce();
+      if (!ok) { clearInterval(autoTimer); autoTimer = null; $auto.textContent = "自动播放"; }
+    }, 900);
+  }
+});
+$scenario.addEventListener("change", (e) => { currentKey = e.target.value; reset(); });
+
+populateScenarios();
+reset();
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+}
+syncTheme();
+try { new MutationObserver(syncTheme).observe(
+  window.parent.document.documentElement,
+  { attributes: true, attributeFilter: ['class'] }
+); } catch(e) {}
+</script>
+</body>
+</html>

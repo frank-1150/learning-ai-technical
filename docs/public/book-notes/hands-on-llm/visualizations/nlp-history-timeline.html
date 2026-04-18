@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NLP 演进时间线</title>
+<style>
+  :root {
+    --bg: #1e1e2e; --fg: #cdd6f4; --muted: #6c7086; --surface: #181825;
+    --border: #45475a; --overlay: #313244; --green: #a6e3a1; --red: #f38ba8;
+    --blue: #89b4fa; --yellow: #f9e2af; --mauve: #cba6f7; --peach: #fab387;
+  }
+  .light {
+    --bg: #eff1f5; --fg: #4c4f69; --muted: #8c8fa1; --surface: #e6e9ef;
+    --border: #ccd0da; --overlay: #dce0e8; --green: #40a02b; --red: #d20f39;
+    --blue: #1e66f5; --yellow: #df8e1d; --mauve: #8839ef; --peach: #fe640b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 13px;
+    padding: 20px;
+    min-height: 100vh;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--blue);
+    margin-bottom: 6px;
+    text-align: center;
+  }
+
+  .sub {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 16px;
+  }
+
+  .legend {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+    font-size: 10px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+  }
+
+  .timeline {
+    position: relative;
+    padding: 10px 0 24px;
+  }
+
+  .track {
+    position: relative;
+    height: 2px;
+    background: var(--border);
+    margin: 60px 30px;
+  }
+
+  .track::after {
+    content: '';
+    position: absolute;
+    right: -10px;
+    top: -4px;
+    border-left: 10px solid var(--border);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+  }
+
+  .nodes {
+    position: relative;
+  }
+
+  .node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    top: 0;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .node-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    margin: 0 auto;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .node.active .node-dot,
+  .node:hover .node-dot {
+    transform: scale(1.4);
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 25%, transparent);
+  }
+
+  .node-label {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  .node.above .node-label {
+    bottom: 24px;
+  }
+
+  .node.below .node-label {
+    top: 24px;
+  }
+
+  .node-year {
+    font-weight: 700;
+    color: var(--fg);
+    font-size: 11px;
+  }
+
+  .node.c-rule .node-dot { border-color: var(--muted); }
+  .node.c-rule { color: var(--muted); }
+  .node.c-stat .node-dot { border-color: var(--peach); }
+  .node.c-stat { color: var(--peach); }
+  .node.c-neural .node-dot { border-color: var(--yellow); }
+  .node.c-neural { color: var(--yellow); }
+  .node.c-attn .node-dot { border-color: var(--blue); }
+  .node.c-attn { color: var(--blue); }
+  .node.c-trans .node-dot { border-color: var(--mauve); }
+  .node.c-trans { color: var(--mauve); }
+  .node.c-bert .node-dot { border-color: var(--green); background: var(--green); }
+  .node.c-bert { color: var(--green); }
+  .node.c-gpt .node-dot { border-color: var(--red); background: var(--red); }
+  .node.c-gpt { color: var(--red); }
+  .node.c-era .node-dot { border-color: var(--peach); background: var(--peach); }
+  .node.c-era { color: var(--peach); }
+
+  .detail {
+    margin-top: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--blue);
+    border-radius: 6px;
+    padding: 16px 18px;
+    min-height: 180px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+  }
+
+  .detail.empty {
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-style: italic;
+  }
+
+  .detail-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+
+  .detail-year {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--blue);
+  }
+
+  .detail-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .detail-tag {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--overlay);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-top: 10px;
+  }
+
+  .detail-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+  }
+
+  .detail-card-title {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+
+  .detail-card-body {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg);
+  }
+
+  .detail-models {
+    color: var(--mauve);
+    font-family: 'SF Mono', monospace;
+  }
+
+  @media (max-width: 720px) {
+    .detail-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>NLP 演进时间线</h2>
+  <div class="sub">点击任一节点查看代表模型、核心创新与局限 — 从规则时代到生成式 AI 爆发</div>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="timeline">
+    <div class="track"></div>
+    <div class="nodes" id="nodes"></div>
+  </div>
+
+  <div class="detail empty" id="detail">点击上方任一节点查看详情</div>
+</div>
+
+<script>
+  const events = [
+    {
+      id: 'rule',
+      year: '1950s–70s',
+      pos: 0,
+      cls: 'c-rule',
+      above: true,
+      label: '规则系统',
+      title: '规则与专家系统时代',
+      tag: 'Rule-based',
+      models: 'ELIZA (1966), SHRDLU (1970)',
+      innovation: '用手写规则和模式匹配让机器模拟对话或理解受限领域的语言。',
+      limitation: '规则指数级爆炸；无法泛化；语言的歧义性几乎无法靠规则穷举。'
+    },
+    {
+      id: 'stat',
+      year: '1980s–90s',
+      pos: 10,
+      cls: 'c-stat',
+      above: false,
+      label: '统计 NLP',
+      title: '统计 NLP 时代',
+      tag: 'Statistical',
+      models: 'HMM, n-gram 语言模型, CRF',
+      innovation: '从规则转向概率——用大规模语料估计 P(word|context)，让机器"数数"而非"被告诉"。',
+      limitation: 'n-gram 受稀疏性和上下文长度限制；几乎无法表征语义。'
+    },
+    {
+      id: 'bow',
+      year: '2000s',
+      pos: 20,
+      cls: 'c-stat',
+      above: true,
+      label: 'Bag-of-Words / TF-IDF',
+      title: 'Bag-of-Words 流行',
+      tag: 'Representation',
+      models: 'TF-IDF, LSA, BM25',
+      innovation: '把文档变成词频向量，让"文本"第一次变成"数字"，支撑起信息检索的黄金时代。',
+      limitation: '丢失词序、丢失语义；"dog bites man" 与 "man bites dog" 向量完全一样。'
+    },
+    {
+      id: 'w2v',
+      year: '2013',
+      pos: 31,
+      cls: 'c-neural',
+      above: false,
+      label: 'Word2Vec',
+      title: 'Word2Vec：稠密语义向量',
+      tag: 'Dense Embedding',
+      models: 'Word2Vec (Mikolov), GloVe, FastText',
+      innovation: '用浅层神经网络学习词向量，让相似词在向量空间中靠近（king − man + woman ≈ queen）。',
+      limitation: '每个词一个固定向量——无法区分 "bank"（河岸）vs "bank"（银行）等多义词。'
+    },
+    {
+      id: 'attn',
+      year: '2014',
+      pos: 42,
+      cls: 'c-attn',
+      above: true,
+      label: 'Seq2Seq + Attention',
+      title: 'RNN + Attention：会看向哪里',
+      tag: 'Sequence Model',
+      models: 'Bahdanau Attention, Encoder-Decoder RNN',
+      innovation: 'Attention 让 decoder 在生成每个词时动态回看 encoder 的所有位置——解决了长句信息压缩损失。',
+      limitation: 'RNN 仍然是顺序计算，无法并行，难以 scale 到超大语料。'
+    },
+    {
+      id: 'tf',
+      year: '2017',
+      pos: 54,
+      cls: 'c-trans',
+      above: false,
+      label: 'Transformer',
+      title: '"Attention Is All You Need"',
+      tag: 'Architecture',
+      models: 'Transformer (Vaswani et al.)',
+      innovation: '彻底抛弃 RNN，用 self-attention + feed-forward 重新搭建。并行化训练 × 长距离依赖 = 现代 LLM 的基石。',
+      limitation: '原始版本是 encoder-decoder，仅用于翻译；自注意力计算是 O(n²)。'
+    },
+    {
+      id: 'bert',
+      year: '2018',
+      pos: 64,
+      cls: 'c-bert',
+      above: true,
+      label: 'BERT (Encoder-only)',
+      title: 'BERT：理解任务的新范式',
+      tag: 'Encoder-only',
+      models: 'BERT, RoBERTa, DistilBERT, ALBERT',
+      innovation: 'Encoder-only + 双向 Masked Language Modeling，引入"预训练 + 微调"范式，横扫 11 个 NLP benchmark。',
+      limitation: '不擅长生成；每个下游任务都需要单独微调一个版本。'
+    },
+    {
+      id: 'gpt1',
+      year: '2018',
+      pos: 70,
+      cls: 'c-gpt',
+      above: false,
+      label: 'GPT-1 (Decoder-only)',
+      title: 'GPT-1：生成式的起点',
+      tag: 'Decoder-only',
+      models: 'GPT-1 (117M params)',
+      innovation: 'Decoder-only + next-token prediction。用 7000 本书 + Common Crawl 预训练，展示了生成式预训练的可行性。',
+      limitation: '规模尚小，能力有限；当时仍被 BERT 的理解型 benchmark 掩盖光芒。'
+    },
+    {
+      id: 'gpt23',
+      year: '2019–2020',
+      pos: 80,
+      cls: 'c-gpt',
+      above: true,
+      label: 'GPT-2 / GPT-3',
+      title: 'GPT 规模化：涌现能力',
+      tag: 'Scaling',
+      models: 'GPT-2 (1.5B), GPT-3 (175B), T5, Switch',
+      innovation: '参数量从 117M → 175B，涌现出 few-shot learning、指令遵循等新能力。规模即一切的时代开启。',
+      limitation: 'base model 不跟随指令；训练成本飙到千万美元级，绝大多数团队望尘莫及。'
+    },
+    {
+      id: 'chatgpt',
+      year: '2022',
+      pos: 88,
+      cls: 'c-era',
+      above: false,
+      label: 'ChatGPT',
+      title: 'ChatGPT：进入大众视野',
+      tag: 'RLHF / Alignment',
+      models: 'ChatGPT (GPT-3.5), InstructGPT',
+      innovation: 'SFT + RLHF 把 base model 调教成会遵循指令的对话模型。5 天百万用户，2 个月 1 亿用户。',
+      limitation: '闭源；幻觉问题；对齐技术仍是黑盒艺术。'
+    },
+    {
+      id: 'boom',
+      year: '2023+',
+      pos: 97,
+      cls: 'c-era',
+      above: true,
+      label: '生成式 AI 爆发',
+      title: '2023：生成式 AI 之年',
+      tag: 'Ecosystem',
+      models: 'GPT-4, Claude, Gemini · Llama 2/3, Mistral, Mixtral, Phi, Qwen · Mamba, RWKV',
+      innovation: '闭源 × 开源双线爆发，Foundation Model 成为共识。Hugging Face 上开源模型数量破 80 万。',
+      limitation: '能耗、数据版权、对齐与安全、监管——工程与社会问题同步到来。'
+    }
+  ];
+
+  const legendData = [
+    { cls: 'c-rule', label: '规则/统计' },
+    { cls: 'c-neural', label: '神经表征' },
+    { cls: 'c-attn', label: 'Attention' },
+    { cls: 'c-trans', label: 'Transformer' },
+    { cls: 'c-bert', label: 'Encoder-only (BERT)' },
+    { cls: 'c-gpt', label: 'Decoder-only (GPT)' },
+    { cls: 'c-era', label: '生成式 AI 时代' }
+  ];
+
+  const nodesEl = document.getElementById('nodes');
+  const detailEl = document.getElementById('detail');
+  const legendEl = document.getElementById('legend');
+
+  function renderLegend() {
+    legendEl.innerHTML = legendData.map(l => `
+      <div class="legend-item"><div class="legend-dot ${l.cls}"></div>${l.label}</div>
+    `).join('');
+    // tint the legend dots
+    legendEl.querySelectorAll('.legend-dot').forEach(dot => {
+      const cls = dot.className.replace('legend-dot ', '');
+      const cMap = {
+        'c-rule': 'var(--muted)',
+        'c-neural': 'var(--yellow)',
+        'c-attn': 'var(--blue)',
+        'c-trans': 'var(--mauve)',
+        'c-bert': 'var(--green)',
+        'c-gpt': 'var(--red)',
+        'c-era': 'var(--peach)'
+      };
+      dot.style.background = cMap[cls] || 'var(--surface)';
+      dot.style.borderColor = cMap[cls] || 'var(--border)';
+    });
+  }
+
+  function renderNodes() {
+    nodesEl.innerHTML = events.map(e => `
+      <div class="node ${e.cls} ${e.above ? 'above' : 'below'}" data-id="${e.id}" style="left:${e.pos}%">
+        <div class="node-dot"></div>
+        <div class="node-label">
+          <div class="node-year">${e.year}</div>
+          <div>${e.label}</div>
+        </div>
+      </div>
+    `).join('');
+    nodesEl.querySelectorAll('.node').forEach(el => {
+      el.addEventListener('click', () => selectNode(el.dataset.id));
+    });
+  }
+
+  function selectNode(id) {
+    const e = events.find(x => x.id === id);
+    if (!e) return;
+    nodesEl.querySelectorAll('.node').forEach(n => n.classList.toggle('active', n.dataset.id === id));
+    detailEl.classList.remove('empty');
+    detailEl.innerHTML = `
+      <div class="detail-head">
+        <div class="detail-year">${e.year}</div>
+        <div class="detail-title">${e.title}</div>
+        <div class="detail-tag">${e.tag}</div>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-card">
+          <div class="detail-card-title">代表模型</div>
+          <div class="detail-card-body detail-models">${e.models}</div>
+        </div>
+        <div class="detail-card">
+          <div class="detail-card-title">核心创新</div>
+          <div class="detail-card-body">${e.innovation}</div>
+        </div>
+        <div class="detail-card">
+          <div class="detail-card-title">局限</div>
+          <div class="detail-card-body">${e.limitation}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function render() {
+    renderLegend();
+    renderNodes();
+  }
+
+  function syncTheme() {
+    try {
+      const html = window.parent.document.documentElement;
+      document.body.classList.toggle('light', !html.classList.contains('dark'));
+    } catch (e) {}
+    render();
+  }
+
+  syncTheme();
+  try {
+    new MutationObserver(syncTheme).observe(
+      window.parent.document.documentElement,
+      { attributes: true, attributeFilter: ['class'] }
+    );
+  } catch (e) {}
+</script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>不同微调方法的样本效率</title>
+<style>
+:root { --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+        --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+        --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387 }
+.light { --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+         --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+         --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b }
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 16px;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  background: var(--bg); color: var(--fg);
+}
+h3 { margin: 0 0 4px; font-size: 14px; color: var(--mauve); }
+.subtitle { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+canvas { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; display: block; max-width: 100%; }
+.legend { display: flex; gap: 16px; font-size: 11px; margin-top: 10px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.legend-item .swatch { width: 20px; height: 3px; display: inline-block; }
+.tooltip {
+  position: absolute; display: none;
+  background: var(--overlay); border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px 10px; font-size: 11px;
+  pointer-events: none; color: var(--fg); line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.note { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+strong { color: var(--peach); }
+</style>
+</head>
+<body>
+<h3>不同微调方法的样本效率（示意图）</h3>
+<div class="subtitle">X 轴：每类标注样本数 · Y 轴：分类准确率 · 鼠标悬停查看具体数值</div>
+<canvas id="chart" width="700" height="420"></canvas>
+<div class="legend" id="legend"></div>
+<div class="note">
+注：本图是<strong>定性示意</strong>，不是真实训练结果。SetFit 在低样本段显著领先；BERT 全量微调需要更多数据但最终上限最高；Zero-shot Embedding + LR 低成本高但天花板受预训练 Embedding 限制；TF-IDF 基线在高样本量下也能不错，但对语义细微差别不敏感。
+</div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const canvas = document.getElementById('chart');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+function css(v) { return getComputedStyle(document.body).getPropertyValue(v).trim(); }
+
+// samples per class
+const xPoints = [8, 16, 50, 200, 1000, 5000];
+
+// methods with approximate F1
+const methods = [
+  { name: 'SetFit', color: '--green', vals: [0.78, 0.83, 0.86, 0.88, 0.89, 0.895] },
+  { name: 'BERT 全量微调', color: '--blue', vals: [0.58, 0.66, 0.78, 0.85, 0.895, 0.92] },
+  { name: 'Zero-shot Embedding + LR', color: '--yellow', vals: [0.68, 0.72, 0.76, 0.80, 0.81, 0.82] },
+  { name: 'TF-IDF 基线', color: '--peach', vals: [0.52, 0.55, 0.63, 0.72, 0.78, 0.82] },
+];
+
+let hiddenMethods = new Set();
+
+function log10(x) { return Math.log(x) / Math.LN10; }
+
+const PAD = { left: 60, right: 20, top: 20, bottom: 50 };
+
+function xToPx(x) {
+  const xMin = log10(xPoints[0]), xMax = log10(xPoints[xPoints.length - 1]);
+  const w = canvas.width - PAD.left - PAD.right;
+  return PAD.left + (log10(x) - xMin) / (xMax - xMin) * w;
+}
+function yToPx(y) {
+  const yMin = 0.4, yMax = 1.0;
+  const h = canvas.height - PAD.top - PAD.bottom;
+  return PAD.top + (1 - (y - yMin) / (yMax - yMin)) * h;
+}
+
+function render() {
+  ctx.fillStyle = css('--surface');
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // gridlines
+  ctx.strokeStyle = css('--border');
+  ctx.lineWidth = 0.5;
+  ctx.fillStyle = css('--muted');
+  ctx.font = '10px ui-monospace, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let y = 0.4; y <= 1.0 + 1e-6; y += 0.1) {
+    const py = yToPx(y);
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, py);
+    ctx.lineTo(canvas.width - PAD.right, py);
+    ctx.stroke();
+    ctx.fillText(y.toFixed(1), PAD.left - 6, py);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  xPoints.forEach(x => {
+    const px = xToPx(x);
+    ctx.strokeStyle = css('--border');
+    ctx.beginPath();
+    ctx.moveTo(px, PAD.top);
+    ctx.lineTo(px, canvas.height - PAD.bottom);
+    ctx.stroke();
+    ctx.fillStyle = css('--muted');
+    ctx.fillText(String(x), px, canvas.height - PAD.bottom + 8);
+  });
+
+  // axis labels
+  ctx.fillStyle = css('--fg');
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('每类样本数（log scale）', canvas.width / 2, canvas.height - 12);
+  ctx.save();
+  ctx.translate(18, canvas.height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('F1 分数', 0, 0);
+  ctx.restore();
+
+  // curves
+  methods.forEach(m => {
+    if (hiddenMethods.has(m.name)) return;
+    ctx.strokeStyle = css(m.color);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    m.vals.forEach((v, i) => {
+      const px = xToPx(xPoints[i]);
+      const py = yToPx(v);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+    // dots
+    m.vals.forEach((v, i) => {
+      const px = xToPx(xPoints[i]);
+      const py = yToPx(v);
+      ctx.beginPath();
+      ctx.fillStyle = css(m.color);
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = css('--surface');
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  });
+}
+
+function renderLegend() {
+  const el = document.getElementById('legend');
+  el.innerHTML = '';
+  methods.forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'legend-item';
+    div.style.opacity = hiddenMethods.has(m.name) ? '0.4' : '1';
+    div.innerHTML = `<span class="swatch" style="background:${css(m.color)}"></span>${m.name}`;
+    div.addEventListener('click', () => {
+      if (hiddenMethods.has(m.name)) hiddenMethods.delete(m.name);
+      else hiddenMethods.add(m.name);
+      renderLegend();
+      render();
+    });
+    el.appendChild(div);
+  });
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+  let hit = null;
+  for (const m of methods) {
+    if (hiddenMethods.has(m.name)) continue;
+    for (let i = 0; i < m.vals.length; i++) {
+      const px = xToPx(xPoints[i]);
+      const py = yToPx(m.vals[i]);
+      if (Math.hypot(px - mx, py - my) < 8) {
+        hit = { m, i, px, py };
+        break;
+      }
+    }
+    if (hit) break;
+  }
+  if (hit) {
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 10) + 'px';
+    tooltip.style.top = (e.clientY + 10) + 'px';
+    tooltip.innerHTML = `<strong>${hit.m.name}</strong><br>每类 ${xPoints[hit.i]} 条 · F1 = ${hit.m.vals[hit.i].toFixed(3)}`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch (e) {}
+  renderLegend();
+  render();
+}
+
+syncTheme();
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch (e) {}
+</script>
+</body>
+</html>

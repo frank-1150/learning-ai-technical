@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文本任务决策路由</title>
+<style>
+:root {
+  --bg:#1e1e2e; --fg:#cdd6f4; --muted:#6c7086; --surface:#181825;
+  --border:#45475a; --overlay:#313244; --green:#a6e3a1; --red:#f38ba8;
+  --blue:#89b4fa; --yellow:#f9e2af; --mauve:#cba6f7; --peach:#fab387;
+  --teal:#94e2d5;
+}
+.light {
+  --bg:#eff1f5; --fg:#4c4f69; --muted:#8c8fa1; --surface:#e6e9ef;
+  --border:#ccd0da; --overlay:#dce0e8; --green:#40a02b; --red:#d20f39;
+  --blue:#1e66f5; --yellow:#df8e1d; --mauve:#8839ef; --peach:#fe640b;
+  --teal:#179299;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px; padding: 14px; min-height: 100vh;
+}
+.title { font-size: 14px; color: var(--mauve); margin-bottom: 8px; font-weight: 600; }
+.subtitle { color: var(--muted); font-size: 11px; margin-bottom: 14px; }
+.scenarios {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+}
+.scenario {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 10px; border-radius: 4px; cursor: pointer; transition: all 0.15s;
+  font-size: 11px;
+}
+.scenario:hover { border-color: var(--mauve); }
+.scenario.active { border-color: var(--mauve); background: var(--overlay); box-shadow: 0 0 0 1px var(--mauve); }
+.scenario .tag { color: var(--peach); font-size: 10px; margin-bottom: 4px; text-transform: uppercase; }
+.scenario .desc { color: var(--fg); line-height: 1.4; }
+
+.pipeline { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 14px; min-height: 360px; }
+.route-title { color: var(--blue); font-size: 13px; margin-bottom: 10px; font-weight: 600; }
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+.node {
+  background: var(--overlay); border: 1px solid var(--border); padding: 8px 12px;
+  border-radius: 4px; font-size: 11px; color: var(--fg); white-space: nowrap;
+}
+.node.in { border-color: var(--blue); color: var(--blue); }
+.node.proc { border-color: var(--mauve); color: var(--mauve); }
+.node.out { border-color: var(--green); color: var(--green); }
+.node.tool { border-color: var(--teal); color: var(--teal); }
+.arrow { color: var(--muted); font-size: 14px; }
+
+.stack {
+  margin-top: 10px; padding: 10px; background: var(--bg); border: 1px dashed var(--border); border-radius: 4px;
+}
+.stack-title { color: var(--yellow); font-size: 10px; text-transform: uppercase; margin-bottom: 6px; }
+.stack-item { color: var(--muted); font-size: 11px; line-height: 1.7; }
+.stack-item strong { color: var(--fg); }
+
+.notes { margin-top: 10px; padding: 8px 10px; background: var(--bg); border-left: 2px solid var(--peach); font-size: 11px; color: var(--muted); line-height: 1.5; }
+.notes b { color: var(--peach); }
+.placeholder { color: var(--muted); text-align: center; padding: 100px 0; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="title">文本任务决策路由 — 选哪条路线？</div>
+<div class="subtitle">点击下方任一场景，查看推荐的 pipeline 与工具栈</div>
+<div class="scenarios" id="scenarios"></div>
+<div class="pipeline" id="pipeline">
+  <div class="placeholder">← 选择一个场景</div>
+</div>
+
+<script>
+const scenarios = [
+  { id: 's1', tag: 'A', desc: '电影评论情感分析\n（有标签 · 通用任务）' },
+  { id: 's2', tag: 'B', desc: '内部工单紧急度分类\n（垂直领域 · 少量标签）' },
+  { id: 's3', tag: 'C', desc: '产品评论情感打标\n（完全无标签 · 需快速验证）' },
+  { id: 's4', tag: 'D', desc: '爬了一堆 ArXiv 论文\n（无标签 · 想知道里面有什么主题）' },
+];
+
+const routes = {
+  s1: {
+    title: 'Route 1: Representation Model（任务特定 BERT）',
+    chain: [
+      { t: 'in', text: '电影评论文本' },
+      { t: 'proc', text: 'RoBERTa-sentiment\n(已微调)' },
+      { t: 'out', text: '0 / 1\n(neg / pos)' },
+    ],
+    stack: [
+      { k: '模型', v: 'cardiffnlp/twitter-roberta-base-sentiment-latest' },
+      { k: '库', v: 'transformers.pipeline' },
+      { k: '标注', v: '不需要 — Hub 已有现成模型' },
+      { k: '典型 F1', v: '0.80 (跨域) → 0.90+ (同域)' },
+    ],
+    note: '最直接的路径。前提是 Hugging Face Hub 上**已经**有人为你的任务微调过模型。'
+  },
+  s2: {
+    title: 'Route 2a: Embedding + 轻量分类器',
+    chain: [
+      { t: 'in', text: '工单文本' },
+      { t: 'proc', text: 'SBERT embedding\n(冻结)' },
+      { t: 'tool', text: 'sklearn LogisticRegression' },
+      { t: 'out', text: '紧急度\n(0/1/2)' },
+    ],
+    stack: [
+      { k: 'Embedding', v: 'sentence-transformers/all-mpnet-base-v2' },
+      { k: '分类器', v: 'LogisticRegression (CPU 训练)' },
+      { k: '标注', v: '几百~几千条就够' },
+      { k: '典型 F1', v: '0.85+ (看标注质量)' },
+    ],
+    note: '两步解耦：embedding 只算一次（可缓存、可用 API），分类器训练在 CPU 上秒级完成。**垂直任务首选路径**。'
+  },
+  s3: {
+    title: 'Route 2b: Zero-Shot Embedding（纯余弦相似度）',
+    chain: [
+      { t: 'in', text: '评论 + 标签描述\n"A positive review"' },
+      { t: 'proc', text: 'SBERT embedding' },
+      { t: 'tool', text: 'cosine similarity\n(无训练)' },
+      { t: 'out', text: 'argmax → 0/1' },
+    ],
+    stack: [
+      { k: 'Embedding', v: 'sentence-transformers/all-mpnet-base-v2' },
+      { k: '关键技巧', v: '把标签也 embedding 化（描述越具体越好）' },
+      { k: '标注', v: '完全不需要' },
+      { k: '典型 F1', v: '0.75~0.80 (冷启动 baseline)' },
+    ],
+    note: '**完全零标注**也能跑。prompt "A very negative movie review" 常常比 "negative" 效果好。可以作为原型验证或 AB 基线。'
+  },
+  s4: {
+    title: 'Route: 聚类 + 主题建模（BERTopic 全家桶）',
+    chain: [
+      { t: 'in', text: 'ArXiv abstracts\n(44949 篇)' },
+      { t: 'proc', text: 'SBERT\n[N, 384]' },
+      { t: 'proc', text: 'UMAP\n[N, 5]' },
+      { t: 'proc', text: 'HDBSCAN\n→ 156 簇' },
+      { t: 'tool', text: 'c-TF-IDF\n簇级关键词' },
+      { t: 'out', text: 'Topic 0: speech, asr, ...\nTopic 1: medical, ...' },
+    ],
+    stack: [
+      { k: 'Embedding', v: 'thenlper/gte-small（MTEB clustering 高分 · 小且快）' },
+      { k: '降维', v: 'UMAP(n_components=5, metric="cosine")' },
+      { k: '聚类', v: 'HDBSCAN(min_cluster_size=50) — 不需预设 k，自动识别 outlier' },
+      { k: '主题表示', v: 'CountVectorizer + c-TF-IDF（簇级特征词）' },
+      { k: '可选：LLM 标题', v: 'BERTopic + OpenAI Representation block' },
+    ],
+    note: '**完全无监督**。想把 Topic 从关键词升级为"人话标题"，在最后加一块 LLM Representation（每个主题只调用一次，成本很低）。'
+  }
+};
+
+const scenariosEl = document.getElementById('scenarios');
+const pipelineEl = document.getElementById('pipeline');
+
+function render(id) {
+  Array.from(scenariosEl.children).forEach(c => c.classList.toggle('active', c.dataset.id === id));
+  if (!id) {
+    pipelineEl.innerHTML = '<div class="placeholder">← 选择一个场景</div>';
+    return;
+  }
+  const r = routes[id];
+  let html = `<div class="route-title">${r.title}</div><div class="chain">`;
+  r.chain.forEach((n, i) => {
+    if (i > 0) html += '<span class="arrow">→</span>';
+    html += `<span class="node ${n.t}">${n.text.replace(/\n/g, '<br>')}</span>`;
+  });
+  html += '</div>';
+  html += '<div class="stack"><div class="stack-title">推荐工具栈</div>';
+  r.stack.forEach(s => {
+    html += `<div class="stack-item">• <strong>${s.k}</strong>: ${s.v}</div>`;
+  });
+  html += '</div>';
+  html += `<div class="notes"><b>说明</b> — ${r.note}</div>`;
+  pipelineEl.innerHTML = html;
+}
+
+scenarios.forEach(s => {
+  const el = document.createElement('div');
+  el.className = 'scenario';
+  el.dataset.id = s.id;
+  el.innerHTML = `<div class="tag">场景 ${s.tag}</div><div class="desc">${s.desc.replace(/\n/g, '<br>')}</div>`;
+  el.addEventListener('click', () => render(s.id));
+  scenariosEl.appendChild(el);
+});
+
+function syncTheme() {
+  try {
+    const html = window.parent.document.documentElement;
+    document.body.classList.toggle('light', !html.classList.contains('dark'));
+  } catch(e) {}
+}
+syncTheme();
+render('s1');
+try {
+  new MutationObserver(syncTheme).observe(
+    window.parent.document.documentElement,
+    { attributes: true, attributeFilter: ['class'] }
+  );
+} catch(e) {}
+</script>
+</body>
+</html>
