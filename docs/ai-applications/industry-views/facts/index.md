@@ -10,4 +10,5 @@ Collecting discrete but valuable industry facts. Once enough accumulates, they c
 
 ## Archive
 
+- [2026-04](./2026-04)
 - [2026-03](./2026-03)

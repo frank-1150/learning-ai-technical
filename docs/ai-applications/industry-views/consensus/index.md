@@ -10,4 +10,5 @@ Documenting broadly accepted industry views, with each consensus item timestampe
 
 ## Archive
 
+- [2026-04](./2026-04)
 - [2026-03](./2026-03)

@@ -10,4 +10,5 @@ Curating specific views from AI industry figures and institutions, with sources 
 
 ## Archive
 
+- [2026-04](./2026-04)
 - [2026-03](./2026-03)

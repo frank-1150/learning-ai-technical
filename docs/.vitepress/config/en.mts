@@ -89,6 +89,7 @@ function sidebar(): DefaultTheme.Sidebar {
                 collapsed: true,
                 items: [
                   { text: 'List', link: '/ai-applications/industry-views/consensus/' },
+                  { text: '2026-04', link: '/ai-applications/industry-views/consensus/2026-04' },
                   { text: '2026-03', link: '/ai-applications/industry-views/consensus/2026-03' }
                 ]
               },
@@ -97,6 +98,7 @@ function sidebar(): DefaultTheme.Sidebar {
                 collapsed: true,
                 items: [
                   { text: 'List', link: '/ai-applications/industry-views/perspectives/' },
+                  { text: '2026-04', link: '/ai-applications/industry-views/perspectives/2026-04' },
                   { text: '2026-03', link: '/ai-applications/industry-views/perspectives/2026-03' }
                 ]
               },
@@ -105,6 +107,7 @@ function sidebar(): DefaultTheme.Sidebar {
                 collapsed: true,
                 items: [
                   { text: 'List', link: '/ai-applications/industry-views/facts/' },
+                  { text: '2026-04', link: '/ai-applications/industry-views/facts/2026-04' },
                   { text: '2026-03', link: '/ai-applications/industry-views/facts/2026-03' }
                 ]
               }
