@@ -12,3 +12,4 @@ Real-world notes on how I use AI in daily work and learning: which tools, how I 
 
 - [My AI Information Sources](./my-ai-information-source)
 - [In the Agent Era, the Real Demand May Be "Better at Execution"](./agent-scheduling-thoughts)
+- [Packing Expensive Expertise Into a Model: The Economics Behind LLM Training](./llm-training-economics)

@@ -69,7 +69,8 @@ function sidebar(): DefaultTheme.Sidebar {
             items: [
               { text: 'Introduction', link: '/ai-applications/how-i-use-ai/' },
               { text: 'My AI Information Sources', link: '/ai-applications/how-i-use-ai/my-ai-information-source' },
-              { text: 'In the Agent Era, the Real Demand May Be "Better at Execution"', link: '/ai-applications/how-i-use-ai/agent-scheduling-thoughts' }
+              { text: 'In the Agent Era, the Real Demand May Be "Better at Execution"', link: '/ai-applications/how-i-use-ai/agent-scheduling-thoughts' },
+              { text: 'Packing Expensive Expertise Into a Model: The Economics Behind LLM Training', link: '/ai-applications/how-i-use-ai/llm-training-economics' }
             ]
           },
           {

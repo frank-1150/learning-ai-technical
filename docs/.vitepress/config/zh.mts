@@ -94,7 +94,8 @@ function sidebar(): DefaultTheme.Sidebar {
             items: [
               { text: '介绍', link: '/zh/ai-applications/how-i-use-ai/' },
               { text: '我获取 AI 信息的方式', link: '/zh/ai-applications/how-i-use-ai/my-ai-information-source' },
-              { text: 'Agent 时代真正的需求，可能是"更会执行"', link: '/zh/ai-applications/how-i-use-ai/agent-scheduling-thoughts' }
+              { text: 'Agent 时代真正的需求，可能是"更会执行"', link: '/zh/ai-applications/how-i-use-ai/agent-scheduling-thoughts' },
+              { text: '把昂贵的专业知识装进模型：LLM Training 背后的经济学', link: '/zh/ai-applications/how-i-use-ai/llm-training-economics' }
             ]
           },
           {
