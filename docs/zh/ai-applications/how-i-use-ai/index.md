@@ -10,4 +10,4 @@ tags: [ai-tools, workflow, productivity, prompt-engineering]
 
 ## 文章
 
-- [Agent 时代真正的需求，可能是"更会执行"](./围绕定时调度%20agent%20的几个想法.md) — 从定时任务出发，聊聊 Agent 平台、动态路由与执行市场的价值链
+- [Agent 时代真正的需求，可能是"更会执行"](./agent-scheduling-thoughts.md) — 从定时任务出发，聊聊 Agent 平台、动态路由与执行市场的价值链

@@ -93,7 +93,8 @@ function sidebar(): DefaultTheme.Sidebar {
             collapsed: false,
             items: [
               { text: '介绍', link: '/zh/ai-applications/how-i-use-ai/' },
-              { text: 'Agent 时代真正的需求，可能是"更会执行"', link: '/zh/ai-applications/how-i-use-ai/围绕定时调度 agent 的几个想法' }
+              { text: '我获取 AI 信息的方式', link: '/zh/ai-applications/how-i-use-ai/my-ai-information-source' },
+              { text: 'Agent 时代真正的需求，可能是"更会执行"', link: '/zh/ai-applications/how-i-use-ai/agent-scheduling-thoughts' }
             ]
           },
           {

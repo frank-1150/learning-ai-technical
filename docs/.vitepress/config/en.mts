@@ -59,7 +59,8 @@ function sidebar(): DefaultTheme.Sidebar {
             collapsed: false,
             items: [
               { text: 'Introduction', link: '/ai-applications/agents/' },
-              { text: 'The Core of Agents: Two Loops', link: '/ai-applications/agents/agent-loop' }
+              { text: 'The Core of Agents: Two Loops', link: '/ai-applications/agents/agent-loop' },
+              { text: 'OpenViking: Redefining Agent Memory & Retrieval with the Filesystem', link: '/ai-applications/agents/openviking' }
             ]
           },
           {
@@ -126,7 +127,8 @@ function sidebar(): DefaultTheme.Sidebar {
             collapsed: false,
             items: [
               { text: 'Introduction', link: '/machine-learning/neural-networks/' },
-              { text: 'ChatGPT Overview (3Blue1Brown)', link: '/machine-learning/neural-networks/chatgpt-overview-3blue1brown' }
+              { text: 'ChatGPT Overview (3Blue1Brown)', link: '/machine-learning/neural-networks/chatgpt-overview-3blue1brown' },
+              { text: 'Nemotron 3 Super Hybrid Architecture', link: '/machine-learning/neural-networks/nemotron-3-super-hybrid-architecture' }
             ]
           },
           {
@@ -142,6 +144,8 @@ function sidebar(): DefaultTheme.Sidebar {
             collapsed: false,
             items: [
               { text: 'NVIDIA Vera Rubin + LPX', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' },
+              { text: 'NVIDIA Rubin R200', link: '/machine-learning/inference/nvidia-rubin-r200' },
+              { text: 'Prefill/Decode Disaggregation & Mooncake', link: '/machine-learning/inference/prefill-decode-disaggregation-mooncake' },
               { text: 'vLLM & PagedAttention', link: '/machine-learning/inference/vllm-pagedattention' },
               { text: 'vLLM Codebase Deep Dive', link: '/machine-learning/inference/vllm-codebase' }
             ]
