@@ -146,6 +146,7 @@ function sidebar(): DefaultTheme.Sidebar {
             items: [
               { text: 'NVIDIA Vera Rubin + LPX', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' },
               { text: 'NVIDIA Rubin R200', link: '/machine-learning/inference/nvidia-rubin-r200' },
+              { text: 'How GPUs Interconnect: NVSwitch to NVL72', link: '/machine-learning/inference/nvlink-nvswitch-topology' },
               { text: 'Prefill/Decode Disaggregation & Mooncake', link: '/machine-learning/inference/prefill-decode-disaggregation-mooncake' },
               { text: 'vLLM & PagedAttention', link: '/machine-learning/inference/vllm-pagedattention' },
               { text: 'vLLM Codebase Deep Dive', link: '/machine-learning/inference/vllm-codebase' }
