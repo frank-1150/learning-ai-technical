@@ -87,20 +87,13 @@ DGX-2 is the best sample for understanding this topology. Its physical structure
 
 The way they connect is the essence of the whole design:
 
-```mermaid
-graph TB
-    subgraph BB0["Baseboard 0 · 8 GPUs + 6 NVSwitches"]
-        G0["GPU (represents all 8 on the board)"]
-        SW0["Sw1 Sw2 Sw3 Sw4 Sw5 Sw6"]
-        G0 -- "6 NVLinks, each to 1 switch" --> SW0
-    end
-    subgraph BB1["Baseboard 1 · 8 GPUs + 6 NVSwitches"]
-        SW1["Sw1 Sw2 Sw3 Sw4 Sw5 Sw6"]
-        G1["GPU (represents all 8 on the board)"]
-        SW1 -- "6 NVLinks" --> G1
-    end
-    SW0 == "each switch bridges 8 links to its peer" ==> SW1
-```
+![DGX-2 / HGX-2 baseboard topology: 8 GPUs + 6 NVSwitches per board, the two boards bridged together (Image: NVIDIA official technical blog)](./nvlink-figures/dgx2-baseboard-topology.png)
+
+*Source: [https://developer.nvidia.com/blog/hgx-2-fuses-ai-computing/](https://developer.nvidia.com/blog/hgx-2-fuses-ai-computing/)*
+
+![How each GPU's 6 NVLinks fan out to the 6 NVSwitches on the same baseboard, and how the switches bridge to the peer board (Image: NVIDIA NVSwitch technical overview)](./nvlink-figures/nvswitch-baseboard-interconnect.png)
+
+*Source: [https://images.nvidia.com/content/pdf/nvswitch-technical-overview.pdf](https://images.nvidia.com/content/pdf/nvswitch-technical-overview.pdf)*
 
 Breaking down the key points:
 

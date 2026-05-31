@@ -87,20 +87,10 @@ DGX-2 是理解这套拓扑的最佳样本。它的物理结构是：
 
 连接方式是整套设计的精髓：
 
-```mermaid
-graph TB
-    subgraph BB0["基板 0 · 8 GPU + 6 NVSwitch"]
-        G0["GPU（代表板上 8 颗）"]
-        SW0["Sw1 Sw2 Sw3 Sw4 Sw5 Sw6"]
-        G0 -- "6 条 NVLink，每条接 1 颗交换机" --> SW0
-    end
-    subgraph BB1["基板 1 · 8 GPU + 6 NVSwitch"]
-        SW1["Sw1 Sw2 Sw3 Sw4 Sw5 Sw6"]
-        G1["GPU（代表板上 8 颗）"]
-        SW1 -- "6 条 NVLink" --> G1
-    end
-    SW0 == "每颗交换机 8 条链路桥接对端" ==> SW1
-```
+![](images/Pasted%20image%2020260531143134.png)
+from https://developer.nvidia.com/blog/hgx-2-fuses-ai-computing/ 
+![](images/Pasted%20image%2020260531143245.png)
+from: https://images.nvidia.com/content/pdf/nvswitch-technical-overview.pdf
 
 关键点拆开说：
 
