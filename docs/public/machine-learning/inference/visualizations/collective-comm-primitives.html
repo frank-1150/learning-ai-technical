@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Collective Communication Primitives</title>
+<style>
+:root{--bg:#fff;--surface:#f8fafc;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--accent:#3b82f6;--accent-l:#dbeafe;--green:#22c55e;--orange:#f97316;--purple:#a855f7;}
+body.dark{--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#f1f5f9;--muted:#94a3b8;--accent:#60a5fa;--accent-l:#1e3a5f;--green:#4ade80;--orange:#fb923c;--purple:#c084fc;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:18px;font-size:13px;line-height:1.55;}
+h3{font-size:15px;font-weight:700;margin-bottom:4px;}
+.subtitle{font-size:12px;color:var(--muted);margin-bottom:12px;}
+.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center;}
+.tab{padding:6px 13px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12px;cursor:pointer;transition:all .2s;font-weight:600;}
+.tab.active{color:#fff;border-color:transparent;background:var(--accent);}
+.tab.active[data-m="a2a"]{background:var(--orange);}
+.play{margin-left:auto;font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 11px;cursor:pointer;font-weight:600;user-select:none;}
+.stage{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px;}
+canvas{width:100%;height:auto;display:block;}
+.phasebar{display:flex;gap:6px;margin:10px 0 0;flex-wrap:wrap;}
+.phasebar .pstep{flex:1;min-width:120px;font-size:10.5px;border:1px solid var(--border);border-radius:7px;padding:6px 8px;color:var(--muted);background:var(--surface);transition:background .2s,border-color .2s,color .2s;min-height:48px;}
+.phasebar .pstep.on{border-color:var(--accent);color:var(--text);background:var(--accent-l);font-weight:600;}
+.phasebar.a2a .pstep.on{border-color:var(--orange);background:rgba(249,115,22,.12);}
+.caption{margin-top:10px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:9px 12px;font-size:12px;min-height:92px;}
+.caption.a2a{border-left-color:var(--orange);}
+.caption b{color:var(--text);}
+.usedby{margin-top:8px;font-size:11px;color:var(--muted);}
+.usedby .pill{display:inline-block;background:var(--accent-l);color:var(--accent);border-radius:5px;padding:1px 7px;font-weight:700;font-size:10.5px;margin-left:4px;}
+</style>
+</head>
+<body>
+<h3 id="t-title">两个通信原语：把"部分结果"拼成"完整结果"</h3>
+<p class="subtitle" id="t-sub">并行计算后，每张卡只拿到一部分结果。下面用 4 张卡、每张持有一个 4 元素向量，演示两个原语到底把数据搬成了什么样。动画自动循环。</p>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-m="ar">All-Reduce</div>
+  <div class="tab" data-m="a2a">All-to-All（Dispatch / Combine）</div>
+  <div class="play" id="play">⏸ <span id="t-pause">暂停</span></div>
+</div>
+
+<div class="stage"><canvas id="cv" width="760" height="350"></canvas></div>
+<div class="phasebar" id="phasebar"></div>
+<div class="caption" id="cap"></div>
+<div class="usedby" id="usedby"></div>
+
+<script>
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+
+const TXT={
+  zh:{
+    title:'两个通信原语：把"部分结果"拼成"完整结果"',
+    sub:'并行计算后，每张卡只拿到一部分结果。下面用 4 张卡、每张持有一个 4 元素向量，演示两个原语到底把数据搬成了什么样。动画自动循环。',
+    pause:'暂停',play:'播放',
+    tabs:{ar:'All-Reduce',a2a:'All-to-All（Dispatch / Combine）'},
+    ar:{
+      phases:['① 各卡持有不同的部分结果','② 沿环逐跳累加（Reduce-Scatter）','③ 求和结果绕环广播（All-Gather）','④ 完成：每张卡都拿到相同的总和'],
+      caps:[
+        '<b>起点：</b>每张卡算完后，手里只是一份<b>部分结果</b>（不同的向量）。目标是让所有卡都得到这些向量的<b>逐元素之和</b>。',
+        '<b>Reduce-Scatter：</b>数据沿环一跳一跳传递、累加。每张卡只把数据发给环上的下一张卡，绕一圈后，每张卡负责的那一个分片就攒齐了所有卡的和。',
+        '<b>All-Gather：</b>再沿环绕一圈，把每个分片已求好的和广播给所有卡。',
+        '<b>完成：</b>四张卡现在持有<b>完全相同</b>的总和向量。注意：每张卡只和相邻卡通信，总通信量与卡数几乎无关——这正是 Ring All-Reduce 能撑起 TP / DP 的原因。'
+      ],
+      usedby:'用于：张量并行（每层 2 次）、数据并行（梯度同步）'
+    },
+    a2a:{
+      phases:['① 每张卡持有发往各卡的数据块','② 第 j 块同时飞向第 j 张卡','③ 完成：每张卡收齐来自所有卡的块（= 矩阵转置）'],
+      caps:[
+        '<b>起点：</b>第 i 张卡持有 4 个数据块，第 j 块是要发给第 j 张卡的（标号 <b>i→j</b>，同一张卡颜色相同）。这是矩阵的"一行"。',
+        '<b>派发（dispatch）：</b>所有卡同时动作——把第 j 块发往第 j 张卡。MoE 里这一步就是按路由把 token 送到目标专家所在的卡。',
+        '<b>完成：</b>第 j 张卡现在持有来自<b>所有卡</b>的块（0→j, 1→j, 2→j, 3→j），颜色变成各自的来源色。整体相当于把数据矩阵<b>转置</b>了一次。专家算完后再做一次反向的 All-to-All 收回（combine）。'
+      ],
+      usedby:'用于：专家并行（每层 dispatch + combine 两次）'
+    }
+  },
+  en:{
+    title:'Two Primitives: Turning Partial Results into Full Results',
+    sub:'After parallel compute, each GPU holds only a partial result. Using 4 GPUs each holding a 4-element vector, these animations show exactly how each primitive moves the data. Loops automatically.',
+    pause:'Pause',play:'Play',
+    tabs:{ar:'All-Reduce',a2a:'All-to-All (Dispatch / Combine)'},
+    ar:{
+      phases:['① Each GPU holds a different partial','② Accumulate around the ring (Reduce-Scatter)','③ Broadcast the sums around (All-Gather)','④ Done: every GPU has the same sum'],
+      caps:[
+        '<b>Start:</b> after computing, each GPU only holds a <b>partial result</b> (a different vector). The goal is for every GPU to obtain the <b>element-wise sum</b>.',
+        '<b>Reduce-Scatter:</b> data flows hop by hop around the ring, accumulating. Each GPU only sends to its ring neighbor; after one loop, each GPU owns the full sum of one slice.',
+        '<b>All-Gather:</b> circulate once more to broadcast each slice\'s finished sum to all GPUs.',
+        '<b>Done:</b> all four GPUs now hold the <b>identical</b> sum vector. Each GPU only talks to its neighbor, so total traffic is nearly independent of GPU count — why Ring All-Reduce underpins TP / DP.'
+      ],
+      usedby:'Used by: Tensor Parallel (2× per layer), Data Parallel (gradient sync)'
+    },
+    a2a:{
+      phases:['① Each GPU holds a chunk for every GPU','② Chunk j flies to GPU j','③ Done: each GPU gathers chunks from all (= transpose)'],
+      caps:[
+        '<b>Start:</b> GPU i holds 4 chunks; chunk j is destined for GPU j (label <b>i→j</b>, one color per source GPU). This is one "row" of the matrix.',
+        '<b>Dispatch:</b> all GPUs act at once — chunk j is sent to GPU j. In MoE this is routing each token to the GPU holding its target expert.',
+        '<b>Done:</b> GPU j now holds chunks from <b>all</b> GPUs (0→j, 1→j, 2→j, 3→j), recolored by source. The whole thing is a <b>transpose</b> of the data matrix. After experts run, a reverse All-to-All combines results back.'
+      ],
+      usedby:'Used by: Expert Parallel (dispatch + combine, 2× per layer)'
+    }
+  }
+};
+
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let lang='zh', T=TXT.zh, mode='ar', t0=performance.now(), lastPhase=-1;
+let paused=false, pauseStamp=0;
+const W=760,H=350;
+
+// per-mode layout
+const LAYOUT={
+  ar:{ pos:[[80,20],[528,20],[80,196],[528,196]], boxW:152, boxH:150, cellH:22, cellGap:4, header:34 },   // 2x2 ring
+  a2a:{ pos:[[24,87],[218,87],[412,87],[606,87]], boxW:130, boxH:176, cellH:28, cellGap:4, header:34 }     // row
+};
+
+function cssv(n){return getComputedStyle(document.body).getPropertyValue(n).trim();}
+function gcol(i){return [cssv('--green'),cssv('--accent'),cssv('--purple'),cssv('--orange')][i];}
+function ease(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+function hexA(hex,a){hex=hex.trim();if(hex[0]!=='#'||hex.length<7)return hex;const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return `rgba(${r},${g},${b},${a})`;}
+function clock(){ return (paused?pauseStamp:performance.now()) - t0; }
+
+const PARTIAL=[[1,2,0,1],[0,1,3,2],[2,0,1,1],[1,1,2,0]];
+const SUM=[0,1,2,3].map(k=>PARTIAL.reduce((s,v)=>s+v[k],0));
+
+function L(){return LAYOUT[mode];}
+function boxXY(g){return L().pos[g];}
+function center(g){const p=boxXY(g);return {x:p[0]+L().boxW/2,y:p[1]+L().boxH/2};}
+function slot(g,k){const p=boxXY(g),l=L();return {x:p[0]+12,y:p[1]+l.header+k*(l.cellH+l.cellGap),w:l.boxW-24,h:l.cellH};}
+
+function roundRect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function drawBox(g){
+  const p=boxXY(g),l=L();
+  roundRect(p[0],p[1],l.boxW,l.boxH,12);
+  ctx.fillStyle=cssv('--surface');ctx.fill();
+  ctx.lineWidth=2.5;ctx.strokeStyle=gcol(g);ctx.stroke();
+  ctx.fillStyle=gcol(g);ctx.font='700 13px -apple-system,sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';
+  ctx.fillText('GPU '+g,p[0]+12,p[1]+18);
+}
+function drawCell(s,color,label,alpha){
+  ctx.globalAlpha=alpha===undefined?1:alpha;
+  roundRect(s.x,s.y,s.w,s.h,6);
+  ctx.fillStyle=hexA(color,0.18);ctx.fill();
+  ctx.lineWidth=1.5;ctx.strokeStyle=color;ctx.stroke();
+  if(label){ctx.fillStyle=color;ctx.font='700 12px -apple-system,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,s.x+s.w/2,s.y+s.h/2);}
+  ctx.globalAlpha=1;
+}
+function arrowHead(x,y,ang,color){
+  ctx.save();ctx.translate(x,y);ctx.rotate(ang);
+  ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-9,-5);ctx.lineTo(-9,5);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+
+// ---------- All-Reduce (2x2 ring) ----------
+// ring order clockwise: 0(TL) -> 1(TR) -> 3(BR) -> 2(BL) -> 0
+const RING=[0,1,3,2];
+function ringSegments(){
+  // returns 4 segments {a:{x,y}, b:{x,y}} routed through the gaps between boxes
+  const l=L();
+  const c=RING.map(center);
+  const segs=[];
+  // 0->1 top (horizontal), use box right/left edges
+  segs.push({a:{x:boxXY(0)[0]+l.boxW, y:center(0).y}, b:{x:boxXY(1)[0], y:center(1).y}});
+  // 1->3 right (vertical)
+  segs.push({a:{x:center(1).x, y:boxXY(1)[1]+l.boxH}, b:{x:center(3).x, y:boxXY(3)[1]}});
+  // 3->2 bottom (horizontal, right to left)
+  segs.push({a:{x:boxXY(3)[0], y:center(3).y}, b:{x:boxXY(2)[0]+l.boxW, y:center(2).y}});
+  // 2->0 left (vertical, bottom to top)
+  segs.push({a:{x:center(2).x, y:boxXY(2)[1]}, b:{x:center(0).x, y:boxXY(0)[1]+l.boxH}});
+  return segs;
+}
+function drawAR(p){
+  let phase; if(p<0.15)phase=0; else if(p<0.55)phase=1; else if(p<0.85)phase=2; else phase=3;
+  setPhase(phase);
+  const done=phase>=3, flowing=(phase===1||phase===2);
+  const segs=ringSegments();
+  // ring lines + direction arrows
+  ctx.strokeStyle=flowing?hexA(cssv('--accent'),0.55):cssv('--border');ctx.lineWidth=2;
+  segs.forEach(s=>{ ctx.beginPath();ctx.moveTo(s.a.x,s.a.y);ctx.lineTo(s.b.x,s.b.y);ctx.stroke();
+    const mx=(s.a.x+s.b.x)/2,my=(s.a.y+s.b.y)/2,ang=Math.atan2(s.b.y-s.a.y,s.b.x-s.a.x);
+    arrowHead(mx+Math.cos(ang)*6,my+Math.sin(ang)*6,ang,flowing?cssv('--accent'):cssv('--muted'));
+  });
+  // boxes + cells
+  for(let g=0;g<4;g++){
+    drawBox(g);
+    for(let k=0;k<4;k++){ const s=slot(g,k);
+      if(done) drawCell(s,gcol(k),String(SUM[k]),1);
+      else drawCell(s,gcol(k),String(PARTIAL[g][k]),1);
+    }
+  }
+  // flowing dots around the ring (only phases 1-2)
+  if(flowing){
+    const t=clock()/1000;
+    for(let d=0;d<4;d++){
+      const u=(t*0.55+d/4)%1; const si=Math.floor(u*4), f=(u*4)%1; const s=segs[si];
+      const px=s.a.x+(s.b.x-s.a.x)*f, py=s.a.y+(s.b.y-s.a.y)*f;
+      ctx.beginPath();ctx.arc(px,py,7,0,7);ctx.fillStyle=gcol(d);ctx.shadowColor=gcol(d);ctx.shadowBlur=9;ctx.fill();ctx.shadowBlur=0;
+    }
+  }
+}
+
+// ---------- All-to-All (row, transpose) ----------
+function drawA2A(p){
+  let phase; if(p<0.18)phase=0; else if(p<0.78)phase=1; else phase=2;
+  setPhase(phase);
+  for(let g=0;g<4;g++) drawBox(g);
+  if(phase===0){
+    for(let i=0;i<4;i++) for(let j=0;j<4;j++){ drawCell(slot(i,j),gcol(i),i+'→'+j,1); }
+  } else if(phase===2){
+    for(let j=0;j<4;j++) for(let k=0;k<4;k++){ drawCell(slot(j,k),gcol(k),k+'→'+j,1); }
+  } else {
+    const f=ease((p-0.18)/0.6);
+    for(let i=0;i<4;i++) for(let j=0;j<4;j++){ drawCell(slot(j,i),gcol(i),'',0.12); }
+    for(let i=0;i<4;i++) for(let j=0;j<4;j++){
+      const a=slot(i,j), b=slot(j,i);
+      drawCell({x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,w:a.w,h:a.h}, gcol(i), i+'→'+j, 1);
+    }
+  }
+}
+
+function frame(){
+  ctx.clearRect(0,0,W,H);
+  const dur=mode==='ar'?8000:6000;
+  const p=(clock()/dur)%1;
+  if(mode==='ar')drawAR(p); else drawA2A(p);
+  requestAnimationFrame(frame);
+}
+
+function setPhase(ph){
+  if(ph===lastPhase) return; lastPhase=ph;
+  const bar=document.getElementById('phasebar');
+  bar.className='phasebar'+(mode==='a2a'?' a2a':'');
+  bar.innerHTML=T[mode].phases.map((t,i)=>`<div class="pstep${i===ph?' on':''}">${t}</div>`).join('');
+  const cap=document.getElementById('cap');
+  cap.className='caption'+(mode==='a2a'?' a2a':'');
+  cap.innerHTML=T[mode].caps[ph];
+}
+function renderStatic(){
+  document.getElementById('usedby').innerHTML='<span class="pill">'+T[mode].usedby+'</span>';
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.m===mode));
+  lastPhase=-1;
+}
+function setMode(m){ mode=m; t0=performance.now(); if(paused)pauseStamp=t0; renderStatic(); }
+
+function setPlay(){
+  const el=document.getElementById('play');
+  if(paused){ paused=false; t0+=performance.now()-pauseStamp; el.innerHTML='⏸ <span>'+T.pause+'</span>'; }
+  else { paused=true; pauseStamp=performance.now(); el.innerHTML='▶ <span>'+T.play+'</span>'; }
+}
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>setMode(t.dataset.m)));
+document.getElementById('play').addEventListener('click',setPlay);
+
+function applyLang(){
+  lang=getLang();T=TXT[lang];
+  document.getElementById('t-title').textContent=T.title;
+  document.getElementById('t-sub').textContent=T.sub;
+  document.querySelectorAll('.tab').forEach(t=>{ if(t.dataset.m) t.textContent=T.tabs[t.dataset.m]; });
+  document.getElementById('play').innerHTML=(paused?'▶ <span>'+T.play+'</span>':'⏸ <span>'+T.pause+'</span>');
+  renderStatic();
+}
+function syncTheme(){try{const d=window.parent.document.body.classList.contains('dark')||window.parent.document.documentElement.classList.contains('dark');document.body.classList.toggle('dark',d);}catch(e){}}
+
+applyLang();
+syncTheme();
+requestAnimationFrame(frame);
+try{new MutationObserver(syncTheme).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['class']});}catch(e){}
+try{new MutationObserver(syncTheme).observe(window.parent.document.body,{attributes:true,attributeFilter:['class']});}catch(e){}
+try{new MutationObserver(applyLang).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['lang']});}catch(e){}
+</script>
+</body>
+</html>

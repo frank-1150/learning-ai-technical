@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parallelism Split Explorer</title>
+<style>
+:root{--bg:#fff;--surface:#f8fafc;--surface2:#f1f5f9;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--accent:#3b82f6;--accent-l:#dbeafe;--green:#22c55e;--green-l:#dcfce7;--orange:#f97316;--orange-l:#ffedd5;--purple:#a855f7;--purple-l:#f3e8ff;--red:#ef4444;--red-l:#fee2e2;--off:#cbd5e1;}
+body.dark{--bg:#0f172a;--surface:#1e293b;--surface2:#172033;--border:#334155;--text:#f1f5f9;--muted:#94a3b8;--accent:#60a5fa;--accent-l:#1e3a5f;--green:#4ade80;--green-l:#052e16;--orange:#fb923c;--orange-l:#431407;--purple:#c084fc;--purple-l:#2e1065;--red:#f87171;--red-l:#450a0a;--off:#334155;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);padding:18px;font-size:13px;line-height:1.55;}
+h3{font-size:15px;font-weight:700;margin-bottom:4px;}
+.subtitle{font-size:12px;color:var(--muted);margin-bottom:14px;}
+.tabs{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;align-items:center;}
+.tab{padding:6px 13px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12px;cursor:pointer;transition:all .2s;font-weight:600;}
+.tab.active{color:#fff;border-color:transparent;}
+.tab[data-m="dp"].active{background:var(--green);}
+.tab[data-m="tp"].active{background:var(--accent);}
+.tab[data-m="pp"].active{background:var(--purple);}
+.tab[data-m="ep"].active{background:var(--orange);}
+.play{margin-left:auto;font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;font-weight:600;}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--muted);margin:8px 0 12px;}
+.legend span{display:inline-flex;align-items:center;gap:4px;}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block;}
+.sw.full{background:var(--green);}
+.sw.slice{background:var(--accent);}
+.sw.stage{background:var(--purple);}
+.sw.expert{background:var(--orange);}
+.sw.absent{background:var(--off);}
+.batchbar{display:flex;gap:6px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin-bottom:10px;font-size:11px;flex-wrap:wrap;}
+.batchbar b{color:var(--text);}
+.chip{border-radius:5px;padding:2px 8px;font-size:10.5px;font-weight:700;}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;}
+.gpu{border:1.5px solid var(--border);border-radius:10px;background:var(--surface);overflow:hidden;display:flex;flex-direction:column;}
+.gpu-h{font-size:11px;font-weight:700;padding:6px 9px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.gpu-h .role{font-size:9.5px;font-weight:600;color:var(--muted);}
+.stack{padding:8px;display:flex;flex-direction:column;gap:5px;}
+.blk{border-radius:6px;padding:5px 7px;font-size:10px;font-weight:600;border:1px solid transparent;position:relative;transition:all .25s;}
+.blk .bt{font-weight:700;}
+.blk .bs{font-size:9px;opacity:.85;font-weight:500;}
+.blk.full{background:var(--green-l);border-color:var(--green);color:var(--green);}
+.blk.slice{background:var(--accent-l);border-color:var(--accent);color:var(--accent);}
+.blk.stage{background:var(--purple-l);border-color:var(--purple);color:var(--purple);}
+.blk.expert{background:var(--orange-l);border-color:var(--orange);color:var(--orange);}
+.blk.absent{background:transparent;border:1px dashed var(--off);color:var(--off);opacity:.7;}
+.comm{margin:12px 0 0;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:10px 12px;}
+.comm .ct{font-size:12px;font-weight:700;margin-bottom:3px;display:flex;align-items:center;gap:7px;}
+.comm .prim{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:5px;background:var(--accent-l);color:var(--accent);}
+.comm .cd{font-size:11.5px;color:var(--muted);}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+.fact{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
+.fact .fl{font-size:9.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}
+.fact .fv{font-size:11.5px;color:var(--text);font-weight:500;}
+@media(max-width:620px){.grid{grid-template-columns:repeat(2,1fr);}.facts{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<h3 id="t-title">一个模型，四种"摊开"方式</h3>
+<p class="subtitle" id="t-sub">同一个 Transformer，放到 4 张 GPU 上。切换并行方式，看每张卡到底持有模型的哪一部分、跑的是哪一份数据、卡之间要做什么通信。</p>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-m="dp">Data Parallel</div>
+  <div class="tab" data-m="tp">Tensor Parallel</div>
+  <div class="tab" data-m="pp">Pipeline Parallel</div>
+  <div class="tab" data-m="ep">Expert Parallel</div>
+  <div class="play" id="play">⏸ <span id="t-pause">暂停轮播</span></div>
+</div>
+
+<div class="legend" id="legend"></div>
+<div class="batchbar" id="batchbar"></div>
+<div class="grid" id="grid"></div>
+<div class="comm" id="comm"></div>
+<div class="facts" id="facts"></div>
+
+<script>
+function getLang(){try{const l=window.parent.document.documentElement.lang;return l.startsWith('zh')?'zh':'en';}catch(e){return'zh';}}
+
+// block kinds: full / slice / stage / expert / absent
+const DATA={
+  zh:{
+    title:'一个模型，四种"摊开"方式',
+    sub:'同一个 Transformer，放到 4 张 GPU 上。切换并行方式，看每张卡到底持有模型的哪一部分、跑的是哪一份数据、卡之间要做什么通信。',
+    pause:'暂停轮播',play:'继续轮播',
+    legend:[['full','完整持有'],['slice','按维度切片'],['stage','只持有部分层'],['expert','只持有部分专家'],['absent','本卡没有']],
+    tabs:{dp:'Data Parallel',tp:'Tensor Parallel',pp:'Pipeline Parallel',ep:'Expert Parallel'},
+    blkNames:{emb:'Embedding',attn:'Attention',ffn:'FFN / MoE',head:'LM Head'},
+    modes:{
+      dp:{
+        batch:'数据切分：每张卡拿到 <b>不同的 batch 分片</b>，但模型完全相同',
+        batchChips:['batch #0','batch #1','batch #2','batch #3'],
+        cards:i=>({role:'完整副本',blocks:[['emb','full','整层'],['attn','full','整层'],['ffn','full','整层'],['head','full','整层']]}),
+        comm:'All-Reduce（梯度同步）',
+        commPrim:'All-Reduce',
+        commDesc:'每张卡各算各的，反向传播后把梯度做一次 All-Reduce 求平均，保证四份模型参数始终一致。推理时则是 4 个独立副本，无需通信。',
+        facts:[['为什么能并行','样本之间相互独立，loss 对 batch 可加，所以可以把 batch 拆开各算各的'],['通信原语','梯度 All-Reduce（训练）/ 无（纯推理副本）'],['主要约束','每张卡都要装下完整模型 —— 放不下大模型，需配合 ZeRO/FSDP 把参数也切开'],['扩展上限','几乎线性扩展，是吞吐扩容的首选维度']]
+      },
+      tp:{
+        batch:'同一个 batch：四张卡处理 <b>完全相同的输入</b>，但每张只算权重矩阵的一部分',
+        batchChips:['同一 batch','同一 batch','同一 batch','同一 batch'],
+        cards:i=>({role:'各持 1/4 权重',blocks:[['emb','slice','词表 1/4'],['attn','slice','头 '+(i*8)+'–'+(i*8+7)],['ffn','slice','列 1/4'],['head','slice','词表 1/4']]}),
+        comm:'每层 All-Reduce（前向 + 反向各一次）',
+        commPrim:'All-Reduce',
+        commDesc:'注意力按 head 切、FFN 按行/列切，每张卡只算部分结果，必须在每个 Attention / FFN 块后做一次 All-Reduce 把部分和拼成完整激活。通信极其频繁。',
+        facts:[['为什么能并行','矩阵乘法可按行/列分块，分块结果相加 = 完整结果（Megatron 切分）'],['通信原语','每层 2× All-Reduce，紧贴在计算之间'],['主要约束','通信量大且在关键路径上 —— 只能在 NVLink 高带宽域内做，一般 ≤ 单节点 8 卡'],['扩展上限','受 NVLink 域大小限制，TP 度通常 ≤ 8（NVL72 可更大）']]
+      },
+      pp:{
+        batch:'流水线：batch 切成 micro-batch，像流水线一样依次穿过各阶段',
+        batchChips:['micro 0→','micro 1→','micro 2→','micro 3→'],
+        cards:i=>{const L=['0–2','3–5','6–8','9–11'][i];const bl=[['emb', i===0?'stage':'absent', i===0?'入口':'—'],['attn','stage','层 '+L],['ffn','stage','层 '+L],['head', i===3?'stage':'absent', i===3?'出口':'—']];return {role:'阶段 '+i+'（层 '+L+'）',blocks:bl};},
+        comm:'相邻阶段间 P2P（点对点）传激活',
+        commPrim:'P2P Send/Recv',
+        commDesc:'每张卡只持有连续的几层，算完把激活通过 Send/Recv 传给下一阶段。通信量小（只传一份激活），但存在流水线"气泡"——头尾阶段会闲置等待。',
+        facts:[['为什么能并行','层是顺序依赖的，可沿深度切成阶段，用 micro-batch 填满流水线'],['通信原语','相邻阶段 P2P，通信量远小于 TP/DP'],['主要约束','流水线气泡（bubble）浪费算力；micro-batch 越多气泡越小，但显存压力增大'],['扩展上限','可跨节点，常用来跨越 NVLink 域、连接多机']]
+      },
+      ep:{
+        batch:'MoE 路由：每个 token 只激活 Top-K 个专家，被发往持有这些专家的卡',
+        batchChips:['token→E?','token→E?','token→E?','token→E?'],
+        cards:i=>({role:'专家 '+(i*2)+'–'+(i*2+1),blocks:[['emb','full','复制'],['attn','full','复制 / DP'],['ffn','expert','专家 E'+(i*2)+', E'+(i*2+1)],['head','full','复制']]}),
+        comm:'All-to-All（dispatch 派发 + combine 收回）',
+        commPrim:'All-to-All',
+        commDesc:'注意力部分用复制/DP，但专家分散在不同卡上。每层要先 All-to-All 把 token 派发到对应专家所在的卡（dispatch），算完再 All-to-All 收回原位（combine）。这是 MoE 部署的核心通信瓶颈。',
+        facts:[['为什么要用','专家太多装不进一张卡；分散后每个专家还能攒到足够大的 batch 才划算'],['通信原语','每层 2× All-to-All（dispatch + combine）'],['主要约束','负载不均（热门专家挤爆）+ 跨节点 All-to-All 延迟，需要 EPLB + 冗余专家'],['扩展上限','EP 度可达上百（DeepSeek 解码 EP144、训练 EP320），但要专用通信库（DeepEP）']]
+      }
+    }
+  },
+  en:{
+    title:'One Model, Four Ways to Spread It',
+    sub:'The same Transformer, placed on 4 GPUs. Switch the parallelism mode to see which part of the model each GPU holds, which data it runs, and what they must communicate.',
+    pause:'Pause cycle',play:'Resume cycle',
+    legend:[['full','Holds full'],['slice','Sliced by dim'],['stage','Subset of layers'],['expert','Subset of experts'],['absent','Not on this GPU']],
+    tabs:{dp:'Data Parallel',tp:'Tensor Parallel',pp:'Pipeline Parallel',ep:'Expert Parallel'},
+    blkNames:{emb:'Embedding',attn:'Attention',ffn:'FFN / MoE',head:'LM Head'},
+    modes:{
+      dp:{
+        batch:'Data split: each GPU gets a <b>different batch shard</b> but an identical full model',
+        batchChips:['batch #0','batch #1','batch #2','batch #3'],
+        cards:i=>({role:'Full replica',blocks:[['emb','full','full'],['attn','full','full'],['ffn','full','full'],['head','full','full']]}),
+        comm:'All-Reduce (gradient sync)',commPrim:'All-Reduce',
+        commDesc:'Each GPU computes independently; after backprop, gradients are averaged with one All-Reduce so all 4 replicas stay identical. At inference they are just independent replicas — no communication.',
+        facts:[['Why it works','Samples are independent and the loss is additive over the batch, so the batch can be split'],['Primitive','Gradient All-Reduce (training) / none (inference replicas)'],['Main constraint','Each GPU must fit the full model — pair with ZeRO/FSDP to shard params for big models'],['Scaling','Near-linear; the go-to dimension for throughput scaling']]
+      },
+      tp:{
+        batch:'Same batch: all four GPUs process the <b>identical input</b>, each computing part of the weight matrices',
+        batchChips:['same batch','same batch','same batch','same batch'],
+        cards:i=>({role:'Each holds 1/4 of weights',blocks:[['emb','slice','vocab 1/4'],['attn','slice','heads '+(i*8)+'–'+(i*8+7)],['ffn','slice','cols 1/4'],['head','slice','vocab 1/4']]}),
+        comm:'Per-layer All-Reduce (fwd + bwd)',commPrim:'All-Reduce',
+        commDesc:'Attention is split by head, FFN by row/column; each GPU computes a partial result and must All-Reduce after every Attention/FFN block to reassemble the full activation. Extremely communication-heavy.',
+        facts:[['Why it works','Matmul tiles by row/column; summing the tiles equals the full result (Megatron split)'],['Primitive','2× All-Reduce per layer, in the compute critical path'],['Main constraint','Heavy comms on the critical path — only viable inside an NVLink domain, usually ≤ 8 GPUs/node'],['Scaling','Limited by NVLink domain; TP degree usually ≤ 8 (larger on NVL72)']]
+      },
+      pp:{
+        batch:'Pipeline: the batch is split into micro-batches that flow through stages in sequence',
+        batchChips:['micro 0→','micro 1→','micro 2→','micro 3→'],
+        cards:i=>{const L=['0–2','3–5','6–8','9–11'][i];const bl=[['emb', i===0?'stage':'absent', i===0?'entry':'—'],['attn','stage','layers '+L],['ffn','stage','layers '+L],['head', i===3?'stage':'absent', i===3?'exit':'—']];return {role:'Stage '+i+' (layers '+L+')',blocks:bl};},
+        comm:'P2P between adjacent stages',commPrim:'P2P Send/Recv',
+        commDesc:'Each GPU holds a few contiguous layers and sends activations to the next stage via Send/Recv. Communication is light (one activation), but a pipeline "bubble" leaves head/tail stages idle.',
+        facts:[['Why it works','Layers are sequential; split along depth into stages and fill the pipe with micro-batches'],['Primitive','P2P between neighbors — far less than TP/DP'],['Main constraint','Pipeline bubble wastes compute; more micro-batches shrink it but raise memory'],['Scaling','Crosses nodes; used to bridge NVLink domains and connect machines']]
+      },
+      ep:{
+        batch:'MoE routing: each token activates only Top-K experts and is sent to the GPUs holding them',
+        batchChips:['token→E?','token→E?','token→E?','token→E?'],
+        cards:i=>({role:'Experts '+(i*2)+'–'+(i*2+1),blocks:[['emb','full','replicated'],['attn','full','replicated / DP'],['ffn','expert','experts E'+(i*2)+', E'+(i*2+1)],['head','full','replicated']]}),
+        comm:'All-to-All (dispatch + combine)',commPrim:'All-to-All',
+        commDesc:'Attention is replicated/DP, but experts are spread across GPUs. Each layer first All-to-All dispatches tokens to the GPU holding their experts, then All-to-All combines results back. This is the core comms bottleneck of MoE serving.',
+        facts:[['Why use it','Too many experts to fit on one GPU; spreading them lets each expert still gather a large batch'],['Primitive','2× All-to-All per layer (dispatch + combine)'],['Main constraint','Load imbalance (hot experts) + cross-node All-to-All latency; needs EPLB + redundant experts'],['Scaling','EP degree can reach hundreds (DeepSeek decode EP144, train EP320) with DeepEP']]
+      }
+    }
+  }
+};
+
+let lang='zh', T=DATA.zh, mode='dp', playing=true, timer=null;
+const ORDER=['dp','tp','pp','ep'];
+
+function blkClass(k){return k;}
+function render(){
+  const m=T.modes[mode];
+  // legend
+  document.getElementById('legend').innerHTML=T.legend.map(([c,l])=>`<span><span class="sw ${c}"></span>${l}</span>`).join('');
+  // batch bar
+  const tabColors={dp:'var(--green)',tp:'var(--accent)',pp:'var(--purple)',ep:'var(--orange)'};
+  const chipBg={dp:'var(--green-l)',tp:'var(--accent-l)',pp:'var(--purple-l)',ep:'var(--orange-l)'};
+  document.getElementById('batchbar').innerHTML=`<span>${m.batch}</span>`+m.batchChips.map(c=>`<span class="chip" style="background:${chipBg[mode]};color:${tabColors[mode]}">${c}</span>`).join('');
+  // grid
+  const grid=document.getElementById('grid');
+  grid.innerHTML='';
+  for(let i=0;i<4;i++){
+    const card=m.cards(i);
+    const blocks=card.blocks.map(([k,kind,sub])=>`<div class="blk ${blkClass(kind)}"><div class="bt">${T.blkNames[k]}</div><div class="bs">${sub}</div></div>`).join('');
+    grid.innerHTML+=`<div class="gpu"><div class="gpu-h"><span>GPU ${i}</span><span class="role">${card.role}</span></div><div class="stack">${blocks}</div></div>`;
+  }
+  // comm
+  document.getElementById('comm').innerHTML=`<div class="ct">🔗 ${m.comm}<span class="prim">${m.commPrim}</span></div><div class="cd">${m.commDesc}</div>`;
+  document.querySelector('.comm').style.borderLeftColor=tabColors[mode];
+  // facts
+  document.getElementById('facts').innerHTML=m.facts.map(([l,v])=>`<div class="fact"><div class="fl">${l}</div><div class="fv">${v}</div></div>`).join('');
+  // tabs
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.m===mode));
+}
+
+function setMode(mm,manual){
+  mode=mm; render();
+  if(manual){stopPlay();}
+}
+function tick(){ const i=ORDER.indexOf(mode); mode=ORDER[(i+1)%ORDER.length]; render(); }
+function startPlay(){ playing=true; document.getElementById('play').innerHTML='⏸ '+`<span>${T.pause}</span>`; clearInterval(timer); timer=setInterval(tick,4200); }
+function stopPlay(){ playing=false; document.getElementById('play').innerHTML='▶ '+`<span>${T.play}</span>`; clearInterval(timer); }
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>setMode(t.dataset.m,true)));
+document.getElementById('play').addEventListener('click',()=>{playing?stopPlay():startPlay();});
+
+function applyLang(){
+  lang=getLang(); T=DATA[lang];
+  document.getElementById('t-title').textContent=T.title;
+  document.getElementById('t-sub').textContent=T.sub;
+  document.querySelectorAll('.tab').forEach(t=>{ if(t.dataset.m) t.textContent=T.tabs[t.dataset.m]; });
+  render();
+  if(playing) startPlay();
+}
+function syncTheme(){ try{const d=window.parent.document.body.classList.contains('dark')||window.parent.document.documentElement.classList.contains('dark');document.body.classList.toggle('dark',d);}catch(e){} }
+
+applyLang();
+startPlay();
+syncTheme();
+try{new MutationObserver(syncTheme).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['class']});}catch(e){}
+try{new MutationObserver(syncTheme).observe(window.parent.document.body,{attributes:true,attributeFilter:['class']});}catch(e){}
+try{new MutationObserver(applyLang).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['lang']});}catch(e){}
+</script>
+</body>
+</html>
