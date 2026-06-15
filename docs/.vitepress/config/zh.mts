@@ -222,7 +222,8 @@ function sidebar(): DefaultTheme.Sidebar {
               { text: 'vLLM 与 PagedAttention', link: '/zh/machine-learning/inference/vllm-pagedattention' },
               { text: 'vLLM 源码拆解', link: '/zh/machine-learning/inference/vllm-codebase' },
               { text: 'nano-vllm 笔记（一）：Block Manager 与 Prefix Cache', link: '/zh/machine-learning/inference/nano-vllm 学习笔记-block manager 部分' },
-              { text: 'nano-vllm 笔记（二）：Sequence 状态机与 Scheduler 调度', link: '/zh/machine-learning/inference/nano-vllm 学习笔记-sequence 和scheduler 部分' }
+              { text: 'nano-vllm 笔记（二）：Sequence 状态机与 Scheduler 调度', link: '/zh/machine-learning/inference/nano-vllm 学习笔记-sequence 和scheduler 部分' },
+              { text: 'nano-vllm 笔记（三）：Model Runner 与推理执行', link: '/zh/machine-learning/inference/nano-vllm 学习笔记-model runner 部分' }
             ]
           },
           {
