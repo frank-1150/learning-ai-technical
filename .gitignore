@@ -21,6 +21,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Playwright MCP session artifacts (console logs, page snapshots)
+.playwright-mcp/
+
 # Private content - scripts, tokens, downloaded files (never publish)
 private/
 
