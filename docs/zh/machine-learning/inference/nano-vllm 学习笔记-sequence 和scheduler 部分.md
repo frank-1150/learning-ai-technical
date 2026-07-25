@@ -246,7 +246,12 @@ while self.running and len(scheduled_seqs) < self.max_num_seqs:
 
 Decode 阶段每个 sequence 每次只生成 1 个 token，`num_scheduled_tokens = 1`。
 
-这里有一个 **preempt（抢占）机制**：如果显存满了（`can_append` 返回 False），就把 running 队列**最后面**的 sequence 强制释放掉（deallocate 它的 block，状态重置为 WAITING），腾出显存给队头的 sequence 用。被抢占的 sequence 下次会从头重新 prefill。
+这里有一个 **preempt（抢占）机制**：
+- `can_append` 表达的是`如果这个 sequence 需要一个新的 block，当前 block manager 还能不能拿的出一个空闲的 free block`，和上面 prefill 阶段的 `can_allocate`  异曲同工。
+- 如果拿不出来（显存满了，`can_append` 返回 False），就把 running 队列**最后面/最右边**的 sequence 强制释放掉（deallocate 它的 block，状态重置为 WAITING），腾出显存给队头的 sequence 用。被抢占的 sequence 下次会从头重新 prefill。
+- 如果实在拿不出来了，就把自己这个 seq 撤掉。有两种情况会出现 preempt 自己：
+	- 自己排在running 队列的最后，已经没人可以抢占了
+	- 当前这个 sequence 就是running 队列里的唯一一个 sequence，那也只能 preempt 自己。原理上来说不应该出现这种情况，应该保证最长的 decode 长度+最长的prompt长度 对应的block 都能在显存上放得下。
 
 为什么抢占队尾而不是队头？FIFO 公平原则——队头的 sequence 等待时间最长，优先保证它能继续跑。
 
