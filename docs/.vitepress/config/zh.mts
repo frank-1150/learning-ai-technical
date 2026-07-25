@@ -58,7 +58,8 @@ function nav(): DefaultTheme.NavItem[] {
       items: [
         { text: '神经网络', link: '/zh/machine-learning/neural-networks/' },
         { text: "Let's Build GPT (Karpathy)", link: '/zh/machine-learning/build-gpt-karpathy/' },
-        { text: '推理优化与硬件', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' }
+        { text: '推理优化与硬件', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' },
+        { text: 'CS336 学习资料', link: '/zh/machine-learning/cs336/' }
       ]
     },
     {
@@ -232,6 +233,14 @@ function sidebar(): DefaultTheme.Sidebar {
             items: [
               { text: '视频概览', link: '/zh/machine-learning/build-gpt-karpathy/' },
               { text: 'PyTorch 基础操作', link: '/zh/machine-learning/build-gpt-karpathy/pytorch-basics' }
+            ]
+          },
+          {
+            text: 'CS336 学习资料',
+            collapsed: false,
+            items: [
+              { text: '课程概览', link: '/zh/machine-learning/cs336/' },
+              { text: '训练 GPT-2 XL 要多少显存和算力（AdamW）', link: '/zh/machine-learning/cs336/adamw-memory-and-compute' }
             ]
           }
         ]

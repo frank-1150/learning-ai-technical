@@ -41,7 +41,8 @@ function nav(): DefaultTheme.NavItem[] {
       items: [
         { text: 'Neural Networks', link: '/machine-learning/neural-networks/' },
         { text: "Let's Build GPT", link: '/machine-learning/build-gpt-karpathy/' },
-        { text: 'Inference & Hardware', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' }
+        { text: 'Inference & Hardware', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' },
+        { text: 'CS336 Notes', link: '/machine-learning/cs336/' }
       ]
     }
   ]
@@ -150,6 +151,14 @@ function sidebar(): DefaultTheme.Sidebar {
               { text: 'Prefill/Decode Disaggregation & Mooncake', link: '/machine-learning/inference/prefill-decode-disaggregation-mooncake' },
               { text: 'vLLM & PagedAttention', link: '/machine-learning/inference/vllm-pagedattention' },
               { text: 'vLLM Codebase Deep Dive', link: '/machine-learning/inference/vllm-codebase' }
+            ]
+          },
+          {
+            text: 'CS336 Notes',
+            collapsed: false,
+            items: [
+              { text: 'Course Overview', link: '/machine-learning/cs336/' },
+              { text: 'Memory & Compute for Training GPT-2 XL (AdamW)', link: '/machine-learning/cs336/adamw-memory-and-compute' }
             ]
           }
         ]

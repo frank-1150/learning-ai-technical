@@ -13,3 +13,4 @@ tags: [machine-learning, deep-learning]
 - [神经网络](./neural-networks/) — 神经网络原理与实现
 - [从零构建 GPT (Karpathy)](./build-gpt-karpathy/) — Andrej Karpathy 手把手从 Bigram 到完整 Transformer
 - [推理优化与硬件](./inference/nvidia-vera-rubin-lpx) — GPU/LPU 协同推理，Roofline Model
+- [CS336 学习资料](./cs336/) — Stanford "Language Modeling from Scratch" 作业笔记
