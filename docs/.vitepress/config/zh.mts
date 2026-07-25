@@ -220,6 +220,7 @@ function sidebar(): DefaultTheme.Sidebar {
               { text: 'GPU 是怎么互联的：从 NVSwitch 到 NVL72', link: '/zh/machine-learning/inference/nvlink-nvswitch-topology' },
               { text: '并行策略与大模型部署（DeepSeek / Kimi K2）', link: '/zh/machine-learning/inference/parallelism-strategies-deployment' },
               { text: 'Prefill/Decode 解耦与 Mooncake', link: '/zh/machine-learning/inference/prefill-decode-disaggregation-mooncake' },
+              { text: 'FlashAttention：IO-aware 视角理解注意力加速', link: '/zh/machine-learning/inference/flash-attention' },
               { text: 'vLLM 与 PagedAttention', link: '/zh/machine-learning/inference/vllm-pagedattention' },
               { text: 'vLLM 源码拆解', link: '/zh/machine-learning/inference/vllm-codebase' },
               { text: 'nano-vllm 笔记（一）：Block Manager 与 Prefix Cache', link: '/zh/machine-learning/inference/nano-vllm 学习笔记-block manager 部分' },
