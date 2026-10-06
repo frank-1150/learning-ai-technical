@@ -14,3 +14,7 @@ tags: [machine-learning, deep-learning]
 - [从零构建 GPT (Karpathy)](./build-gpt-karpathy/) — Andrej Karpathy 手把手从 Bigram 到完整 Transformer
 - [推理优化与硬件](./inference/nvidia-vera-rubin-lpx) — GPU/LPU 协同推理，Roofline Model
 - [CS336 学习资料](./cs336/) — Stanford "Language Modeling from Scratch" 作业笔记
+
+## 最新推理优化复盘
+
+- [单卡 H20 上把 Qwen3.6-35B-A3B 的服务吞吐提到 5.3 倍](./inference/qwen36-vllm-throughput) — 从 prefix cache、FP8、scheduler step 大小到 kernel launch 的完整测量与归因

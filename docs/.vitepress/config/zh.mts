@@ -215,6 +215,7 @@ function sidebar(): DefaultTheme.Sidebar {
             text: '推理优化与硬件',
             collapsed: false,
             items: [
+              { text: 'Qwen3.6 单卡吞吐优化 5.3×', link: '/zh/machine-learning/inference/qwen36-vllm-throughput' },
               { text: 'NVIDIA Vera Rubin + LPX', link: '/zh/machine-learning/inference/nvidia-vera-rubin-lpx' },
               { text: 'NVIDIA Rubin R200', link: '/zh/machine-learning/inference/nvidia-rubin-r200' },
               { text: 'GPU 是怎么互联的：从 NVSwitch 到 NVL72', link: '/zh/machine-learning/inference/nvlink-nvswitch-topology' },

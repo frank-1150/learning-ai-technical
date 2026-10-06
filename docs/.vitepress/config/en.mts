@@ -145,6 +145,7 @@ function sidebar(): DefaultTheme.Sidebar {
             text: 'Inference & Hardware',
             collapsed: false,
             items: [
+              { text: 'Qwen3.6 Throughput: 5.3× on One H20', link: '/machine-learning/inference/qwen36-vllm-throughput' },
               { text: 'NVIDIA Vera Rubin + LPX', link: '/machine-learning/inference/nvidia-vera-rubin-lpx' },
               { text: 'NVIDIA Rubin R200', link: '/machine-learning/inference/nvidia-rubin-r200' },
               { text: 'How GPUs Interconnect: NVSwitch to NVL72', link: '/machine-learning/inference/nvlink-nvswitch-topology' },
